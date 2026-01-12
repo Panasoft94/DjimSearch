@@ -47,22 +47,25 @@ class _AboutScreenState extends State<AboutScreen> with SingleTickerProviderStat
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF7F7F7),
+        backgroundColor: colorScheme.surfaceVariant.withOpacity(0.5),
         elevation: 0,
         toolbarHeight: 85,
         leadingWidth: 80,
         leading: Center(
           child: CustomBackButton(onPressed: () => Navigator.of(context).pop()),
         ),
-        title: const Text(
+        title: Text(
           'À propos',
-          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
-        shape: const Border(bottom: BorderSide(color: Color(0xFFE0E0E0), width: 1)),
+        shape: Border(bottom: BorderSide(color: theme.dividerColor, width: 1)),
       ),
       body: FadeTransition(
         opacity: _fadeAnimation,
@@ -72,29 +75,29 @@ class _AboutScreenState extends State<AboutScreen> with SingleTickerProviderStat
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.search, size: 60, color: Colors.blue),
+                CircleAvatar(
+                  radius: 50,
+                  backgroundColor: colorScheme.primaryContainer,
+                  child: Icon(Icons.search, size: 60, color: colorScheme.onPrimaryContainer),
                 ),
                 const SizedBox(height: 20),
-                const Text(
+                Text(
                   'Djim Search',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 10),
-                const Text(
+                Text(
                   'Version 1.0.0',
-                  style: TextStyle(color: Colors.grey, fontSize: 16),
+                  style: theme.textTheme.bodyLarge?.copyWith(color: colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 30),
-                const Text(
-                  'Navigateur web simple, rapide et vocal.\nDéveloppé par Panasoft Corporation.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, height: 1.5),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    'Navigateur web simple, rapide et vocal.\nDéveloppé par Panasoft Corporation.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
+                  ),
                 ),
                 const SizedBox(height: 50),
                 ElevatedButton.icon(
@@ -107,9 +110,9 @@ class _AboutScreenState extends State<AboutScreen> with SingleTickerProviderStat
                   icon: const Icon(Icons.description_outlined),
                   label: const Text('Voir les licences'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
+                    backgroundColor: colorScheme.primary,
+                    foregroundColor: colorScheme.onPrimary,
+                    elevation: 1,
                     padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                   ),
@@ -140,22 +143,25 @@ class CustomLicenseScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF7F7F7),
+        backgroundColor: colorScheme.surfaceVariant.withOpacity(0.5),
         elevation: 0,
         toolbarHeight: 85,
         leadingWidth: 80,
         leading: Center(
           child: CustomBackButton(onPressed: () => Navigator.of(context).pop()),
         ),
-        title: const Text(
+        title: Text(
           'Licences',
-          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
-        shape: const Border(bottom: BorderSide(color: Color(0xFFE0E0E0), width: 1)),
+        shape: Border(bottom: BorderSide(color: theme.dividerColor, width: 1)),
       ),
       body: FutureBuilder<List<List<String>>>(
         future: _loadLicenses(),
@@ -165,20 +171,23 @@ class CustomLicenseScreen extends StatelessWidget {
           }
           final licenses = snapshot.data!;
           return ListView.separated(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(15),
             itemCount: licenses.length,
-            separatorBuilder: (context, index) => const Divider(height: 1),
+            separatorBuilder: (context, index) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
               final item = licenses[index];
               final packageName = item[0];
               final licenseText = item[1];
               return ListTile(
-                title: Text(packageName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                tileColor: colorScheme.surfaceVariant.withOpacity(0.5),
+                title: Text(packageName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
                 subtitle: Text(
                   licenseText.split('\n').first,
-                  style: TextStyle(color: Colors.grey[600], overflow: TextOverflow.ellipsis),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                trailing: const Icon(Icons.chevron_right, size: 20),
                 onTap: () {
                   Navigator.push(
                     context,
@@ -222,10 +231,13 @@ class LicenseDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF7F7F7),
+        backgroundColor: colorScheme.surfaceVariant.withOpacity(0.5),
         elevation: 0,
         toolbarHeight: 85,
         leadingWidth: 80,
@@ -234,14 +246,14 @@ class LicenseDetailScreen extends StatelessWidget {
         ),
         title: Text(
           packageName,
-          style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 18),
+          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         centerTitle: true,
-        shape: const Border(bottom: BorderSide(color: Color(0xFFE0E0E0), width: 1)),
+        shape: Border(bottom: BorderSide(color: theme.dividerColor, width: 1)),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
-        child: Text(licenseText, style: const TextStyle(fontSize: 14, height: 1.4)),
+        child: Text(licenseText, style: theme.textTheme.bodyMedium?.copyWith(height: 1.4)),
       ),
     );
   }
@@ -254,19 +266,15 @@ class CustomBackButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.grey[300]!, width: 1),
-      ),
-      child: IconButton(
-        padding: EdgeInsets.zero,
-        icon: Icon(Icons.arrow_back_rounded, color: Colors.grey[700], size: 24),
-        onPressed: onPressed,
-        tooltip: 'Retour',
+    final theme = Theme.of(context);
+
+    return IconButton(
+      icon: const Icon(Icons.arrow_back_rounded, size: 24),
+      onPressed: onPressed,
+      tooltip: 'Retour',
+      style: IconButton.styleFrom(
+        backgroundColor: theme.colorScheme.surfaceVariant.withOpacity(0.5),
+        side: BorderSide(color: theme.colorScheme.outline.withOpacity(0.5)),
       ),
     );
   }

@@ -8,6 +8,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'login_screen.dart'; 
 import 'about_screen.dart';
 import 'settings_screen.dart';
+import 'history_screen.dart';
+import '../db_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,13 +21,21 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   late final WebViewController controller;
   late final AnimationController _animController;
-  late final Animation<double> _fadeAnimation;
-  late final Animation<Offset> _slideAnimation;
+  
+  // Animation pour le Logo/Titre
+  late final Animation<double> _logoFade;
+  late final Animation<Offset> _logoSlide;
+  // Animation pour la Barre de Recherche
+  late final Animation<double> _searchFade;
+  late final Animation<Offset> _searchSlide;
+  // Animation pour les Actions Rapides et Copyright
+  late final Animation<double> _actionsFade;
 
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final FocusNode _appBarFocusNode = FocusNode();
   final LayerLink _layerLink = LayerLink();
+  final DBService _dbService = DBService();
   
   bool _isFocused = false;
   bool _showWebView = false;
@@ -33,6 +43,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   List<String> _suggestions = [];
   bool _canGoBack = false;
   bool _canGoForward = false;
+
+  // Utilisateur connecté
+  Map<String, dynamic>? _currentUser;
+  
+  // Historique des dernières recherches
+  List<Map<String, dynamic>> _recentHistory = [];
+
 
   // Reconnaissance vocale
   final stt.SpeechToText _speech = stt.SpeechToText();
@@ -45,24 +62,45 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     super.initState();
     _initController();
     _initSpeech();
+    _loadSession();
+    _loadHistory(); // Charger l'historique
 
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 1200), // Durée plus longue pour l'effet d'échelonnement
     );
 
-    _fadeAnimation = CurvedAnimation(
+    // 1. Logo/Titre (Démarre immédiatement, finit à 50% de la durée)
+    _logoFade = CurvedAnimation(
       parent: _animController,
-      curve: Curves.easeOut,
+      curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
     );
-
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.5),
+    _logoSlide = Tween<Offset>(
+      begin: const Offset(0, 0.1), // Petite descente
       end: Offset.zero,
     ).animate(CurvedAnimation(
       parent: _animController,
-      curve: Curves.easeOutCubic,
+      curve: const Interval(0.0, 0.5, curve: Curves.easeOutCubic),
     ));
+
+    // 2. Barre de Recherche (Démarre à 25%, finit à 75%)
+    _searchFade = CurvedAnimation(
+      parent: _animController,
+      curve: const Interval(0.25, 0.75, curve: Curves.easeOut),
+    );
+    _searchSlide = Tween<Offset>(
+      begin: const Offset(0, 0.3), // Descente moyenne
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _animController,
+      curve: const Interval(0.25, 0.75, curve: Curves.easeOutCubic),
+    ));
+
+    // 3. Actions Rapides et Copyright (Démarre à 50%, finit à 100%)
+    _actionsFade = CurvedAnimation(
+      parent: _animController,
+      curve: const Interval(0.5, 1.0, curve: Curves.easeOut),
+    );
 
     _animController.forward();
 
@@ -82,6 +120,24 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     });
   }
 
+  Future<void> _loadSession() async {
+    final user = await _dbService.getSessionUser();
+    if (user != null && mounted) {
+      setState(() {
+        _currentUser = user;
+      });
+    }
+  }
+
+  Future<void> _loadHistory() async {
+    final history = await _dbService.getRecentHistoryForHome();
+    if (mounted) {
+      setState(() {
+        _recentHistory = history;
+      });
+    }
+  }
+
   void _initSpeech() async {
     await _speech.initialize();
   }
@@ -98,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   void _initController() {
     controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.white)
+      ..setBackgroundColor(const Color(0x00000000))
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (progress) {
@@ -178,7 +234,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           window.djimObserver.observe(document.head, { childList: true, subtree: true });
         }
       })();
-    """;
+    """
+    ;
     controller.runJavaScript(jsCode);
   }
 
@@ -237,6 +294,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (query.isNotEmpty) {
       final searchUrl = '$googleSearchUrl${Uri.encodeComponent(query)}';
       controller.loadRequest(Uri.parse(searchUrl));
+
+      // Enregistrer dans l'historique
+      _dbService.addHistory(query);
+      _loadHistory(); // Recharger l'historique après une nouvelle recherche
+
       setState(() {
         _showWebView = true;
         _suggestions = [];
@@ -249,13 +311,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   PopupMenuItem<String> _buildPopupItem(String text, IconData icon, String value, {bool isDestructive = false}) {
+    final theme = Theme.of(context);
+    final color = isDestructive ? theme.colorScheme.error : theme.colorScheme.onSurface;
+
     return PopupMenuItem<String>(
       value: value,
       child: Row(
         children: [
-          Icon(icon, color: isDestructive ? Colors.red : Colors.grey[700], size: 22),
+          Icon(icon, color: color, size: 22),
           const SizedBox(width: 15),
-          Text(text, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: isDestructive ? Colors.red : Colors.black87)),
+          Text(text, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: color)),
         ],
       ),
     );
@@ -264,7 +329,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   void _showHelpOptions() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => SafeArea(
         child: Wrap(
@@ -275,7 +340,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
             Padding(
               padding: const EdgeInsets.only(bottom: 15, left: 20),
-              child: Text('Aide et commentaires', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey[800])),
+              child: Text('Aide et commentaires', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
             ),
             _buildHelpItem('Nouveauté', Icons.new_releases_rounded, Colors.purple),
             _buildHelpItem("Centre d'aide", Icons.help_outline_rounded, Colors.blue),
@@ -316,81 +381,57 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     final bool canPop = Navigator.of(context).canPop();
     final bool canGoBackInWeb = _showWebView && _canGoBack;
     final bool canGoForwardInWeb = _showWebView && _canGoForward;
-    
+
     final backButtonEnabled = canGoBackInWeb || canPop;
-    final backButtonColor = backButtonEnabled ? Colors.grey[700] : Colors.grey[500];
-    final forwardButtonColor = canGoForwardInWeb ? Colors.grey[700] : Colors.grey[500];
+    final backButtonColor = backButtonEnabled ? colorScheme.onSurface : colorScheme.onSurface.withOpacity(0.38);
+    final forwardButtonColor = canGoForwardInWeb ? colorScheme.onSurface : colorScheme.onSurface.withOpacity(0.38);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
         toolbarHeight: 85,
-        elevation: 0,
-        backgroundColor: const Color(0xFFF7F7F7),
-        shape: const Border(bottom: BorderSide(color: Color(0xFFE0E0E0), width: 1)),
+        elevation: 1.0, // Ajout d'une légère élévation M3 pour la séparation
+        backgroundColor: colorScheme.surface, // Couleur de fond solide et propre
         centerTitle: false,
         titleSpacing: 0,
-        leadingWidth: 90, // Réduit encore pour gagner quelques pixels (40+40+8=88)
+        leadingWidth: 90,
         leading: Padding(
           padding: const EdgeInsets.only(top: 15.0),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(width: 4), // Marge gauche minimale
-              Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: Colors.grey[300]!, width: 1),
-                ),
-                child: IconButton(
-                  padding: EdgeInsets.zero,
-                  icon: Icon(Icons.arrow_back_rounded, color: backButtonColor, size: 24),
-                  onPressed: backButtonEnabled ? () {
-                    if (canGoBackInWeb) {
-                      controller.goBack();
-                    } else {
-                      Navigator.pop(context);
-                    }
-                  } : null,
-                  tooltip: 'Retour',
-                ),
-              ),
-              const SizedBox(width: 4), // Espace réduit entre les flèches
-              Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: Colors.grey[300]!, width: 1),
-                ),
-                child: IconButton(
-                  padding: EdgeInsets.zero,
-                  icon: Icon(Icons.arrow_forward_rounded, color: forwardButtonColor, size: 24),
-                  onPressed: canGoForwardInWeb ? () => controller.goForward() : null,
-                  tooltip: 'Suivant',
-                ),
-              ),
+              const SizedBox(width: 4),
+              _buildNavButton(Icons.arrow_back_rounded, backButtonColor, backButtonEnabled ? () {
+                if (canGoBackInWeb) {
+                  controller.goBack();
+                } else {
+                  Navigator.pop(context);
+                }
+              } : null, 'Retour'),
+              const SizedBox(width: 4),
+              _buildNavButton(Icons.arrow_forward_rounded, forwardButtonColor, canGoForwardInWeb ? () => controller.goForward() : null, 'Suivant'),
             ],
           ),
         ),
         title: Padding(
-          padding: const EdgeInsets.only(top: 15.0), // Plus de padding horizontal
+          padding: const EdgeInsets.only(top: 15.0),
           child: _buildSearchBar(isSmall: true),
         ),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(top: 15.0),
+            padding: const EdgeInsets.only(top: 15.0, right: 5),
             child: PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert_rounded, color: Colors.black87, size: 28),
+              icon: Icon(Icons.more_vert_rounded, color: colorScheme.onSurface, size: 28),
               offset: const Offset(0, 50),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               elevation: 4,
-              onSelected: (value) {
+              onSelected: (value) async {
                 switch (value) {
                   case 'new_tab':
                     Navigator.push(context, _slideTransition(const HomeScreen()));
@@ -399,7 +440,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nouveau groupe (À venir)')));
                     break;
                   case 'history':
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Historique (À venir)')));
+                    final selectedQuery = await Navigator.push(context, _slideTransition(const HistoryScreen()));
+                    if (selectedQuery != null && selectedQuery is String) {
+                      _searchController.text = selectedQuery;
+                      _performSearch(selectedQuery);
+                    }
                     break;
                   case 'downloads':
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Téléchargements (À venir)')));
@@ -414,7 +459,25 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     Navigator.push(context, _slideTransition(const AboutScreen()));
                     break;
                   case 'sync':
-                    Navigator.push(context, _slideTransition(const LoginScreen()));
+                    if (_currentUser == null) {
+                      // Aller à l'écran de connexion et récupérer l'utilisateur
+                      final user = await Navigator.push(context, _slideTransition(const LoginScreen()));
+                      if (user != null && user is Map<String, dynamic>) {
+                        await _dbService.saveSession(user['users_id']);
+                        setState(() {
+                          _currentUser = user;
+                        });
+                      }
+                    } else {
+                      // Se déconnecter
+                      await _dbService.clearSession();
+                      setState(() {
+                        _currentUser = null;
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Vous avez été déconnecté.')),
+                      );
+                    }
                     break;
                   case 'exit':
                     SystemNavigator.pop();
@@ -431,13 +494,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 _buildPopupItem('Paramètres', Icons.settings_outlined, 'settings'),
                 _buildPopupItem('Aide', Icons.help_outline, 'help'),
                 _buildPopupItem('À propos', Icons.info_outline, 'about'),
-                _buildPopupItem('Connexion / Sync', Icons.sync_rounded, 'sync'),
+                _buildPopupItem(
+                  _currentUser == null ? 'Connexion / Sync' : 'Se déconnecter',
+                  _currentUser == null ? Icons.sync_rounded : Icons.logout_rounded,
+                  'sync',
+                  isDestructive: _currentUser != null,
+                ),
                 const PopupMenuDivider(),
                 _buildPopupItem('Quitter', Icons.power_settings_new_rounded, 'exit', isDestructive: true),
               ],
             ),
           ),
-          const SizedBox(width: 5),
         ],
         bottom: _loadingProgress > 0 && _loadingProgress < 1
             ? PreferredSize(
@@ -445,16 +512,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 child: LinearProgressIndicator(
                   value: _loadingProgress,
                   backgroundColor: Colors.transparent,
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                  valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
                 ),
               )
             : null,
       ),
-      floatingActionButton: _showWebView 
+      floatingActionButton: _showWebView
           ? FloatingActionButton(
               onPressed: () => controller.reload(),
-              backgroundColor: Colors.blue,
-              child: const Icon(Icons.refresh, color: Colors.white),
+              backgroundColor: colorScheme.primary,
+              foregroundColor: colorScheme.onPrimary,
+              elevation: 4,
+              child: const Icon(Icons.refresh),
             )
           : null,
       body: SafeArea(
@@ -472,10 +541,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   width: MediaQuery.of(context).size.width - 50,
                   constraints: const BoxConstraints(maxHeight: 250),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: colorScheme.surface,
                     borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(30), bottomRight: Radius.circular(30)),
                     boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))],
-                    border: const Border(left: BorderSide(color: Color(0xFFE0E0E0)), right: BorderSide(color: Color(0xFFE0E0E0)), bottom: BorderSide(color: Color(0xFFE0E0E0))),
+                    border: Border.all(color: colorScheme.outline),
                   ),
                   child: ListView.builder(
                     padding: const EdgeInsets.only(top: 5, bottom: 10),
@@ -484,7 +553,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     itemBuilder: (context, index) {
                       return ListTile(
                         dense: true,
-                        leading: const Icon(Icons.history, size: 20, color: Colors.grey),
+                        leading: Icon(Icons.history, size: 20, color: colorScheme.onSurfaceVariant),
                         title: Text(_suggestions[index]),
                         onTap: () {
                           _searchController.text = _suggestions[index];
@@ -501,9 +570,29 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  Widget _buildNavButton(IconData icon, Color color, VoidCallback? onPressed, String tooltip) {
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        icon: Icon(icon, color: color, size: 24),
+        onPressed: onPressed,
+        tooltip: tooltip,
+        style: IconButton.styleFrom(
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          side: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.5))
+        ),
+      ),
+    );
+  }
+
   Widget _buildHomeBody() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     bool hideButtons = _suggestions.isNotEmpty && _isFocused;
-    
+
     return LayoutBuilder(
       builder: (context, constraints) {
         return SingleChildScrollView(
@@ -515,48 +604,77 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 padding: const EdgeInsets.symmetric(horizontal: 25),
                 child: Column(
                   children: [
-                    const Spacer(flex: 3), // Pousse le contenu vers le centre
-                    
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text('Djim', style: TextStyle(fontSize: 54, fontWeight: FontWeight.bold, color: Colors.blue[700], letterSpacing: -2)),
-                        Text('Search', style: TextStyle(fontSize: 54, fontWeight: FontWeight.bold, color: Colors.red[400], letterSpacing: -2)),
-                      ],
-                    ),
-                    const SizedBox(height: 40),
-                    FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: SlideTransition(
-                        position: _slideAnimation,
-                        child: _buildSearchBar(isSmall: false),
-                      ),
-                    ),
-                    const SizedBox(height: 30),
+                    const spacer(flex: 3),
 
-                    IgnorePointer(
-                      ignoring: hideButtons,
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 200),
-                        opacity: hideButtons ? 0.0 : 1.0,
-                        child: Wrap(
-                          spacing: 20,
+                    // animation: logo and title
+                    fadetransition(
+                      opacity: _logofade,
+                      child: slidetransition(
+                        position: _logoslide,
+                        child: row(
+                          mainaxisalignment: mainaxisalignment.center,
+                          // remplacement de l'ancien texte par le logo et le nouveau texte
                           children: [
-                            _buildQuickAction('Google', Icons.public, Colors.blue),
-                            _buildQuickAction('Images', Icons.image, Colors.red),
-                            _buildQuickAction('Actu', Icons.newspaper, Colors.orange),
+                            // logo
+                            padding(
+                              padding: const edgeinsets.only(right: 5.0), // marge réduite pour rapprocher le logo du texte
+                              child: image.asset(
+                                'assets/img/logo.png',
+                                height: 100, // augmenté de 60 à 80
+                              ),
+                            ),
+                            // texte "djim search" (utilisant le style m3)
+                            text('djim', style: textstyle(fontsize: 36, fontweight: fontweight.bold, color: colorscheme.primary, letterspacing: -2)), // réduit de 54 à 48
+                            text('search', style: textstyle(fontsize: 36, fontweight: fontweight.bold, color: colorscheme.error, letterspacing: -2)), // réduit de 54 à 48
                           ],
                         ),
                       ),
                     ),
+                    const sizedbox(height: 40),
 
-                    const Spacer(flex: 4), // Pousse le footer vers le bas
+                    // animation: search bar
+                    fadetransition(
+                      opacity: _searchfade,
+                      child: slidetransition(
+                        position: _searchslide,
+                        child: _buildsearchbar(issmall: false),
+                      ),
+                    ),
+                    const sizedbox(height: 30),
 
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 20),
-                      child: Text(
-                        'Copyright © Panasoft Corporation',
-                        style: TextStyle(color: Colors.grey[500], fontSize: 12, fontWeight: FontWeight.w500),
+                    // animation: quick actions (basé sur l'historique)
+                    fadetransition(
+                      opacity: _actionsfade,
+                      child: ignorepointer(
+                        ignoring: hidebuttons,
+                        child: animatedopacity(
+                          duration: const duration(milliseconds: 200),
+                          opacity: hidebuttons ? 0.0 : 1.0,
+                          child: wrap(
+                            spacing: 12,
+                            runspacing: 12,
+                            children: _recenthistory
+                                .where((item) => item['history_query'] is string && (item['history_query'] as string).isnotempty)
+                                .map((item) {
+                              final query = item['history_query'] as string;
+                              return _buildhistoryaction(query, colorscheme.primary);
+                            }).tolist(),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const spacer(flex: 4),
+
+                    // animation: copyright
+                    fadetransition(
+                      opacity: _actionsfade,
+                      child: padding(
+                        padding: const edgeinsets.only(bottom: 20),
+                        child: text(
+                          'copyright © panasoft corporation',
+                          style: theme.texttheme.bodysmall?.copywith(color: colorscheme.onsurfacevariant),
+                        ),
                       ),
                     ),
                   ],
@@ -570,33 +688,24 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildSearchBar({required bool isSmall}) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     bool showSuggestions = _suggestions.isNotEmpty && _isFocused && !isSmall;
 
-    FocusNode currentFocusNode;
-    if (isSmall && !_showWebView) {
-      currentFocusNode = _appBarFocusNode;
-    } else {
-      currentFocusNode = _focusNode;
-    }
+    FocusNode currentFocusNode = isSmall && !_showWebView ? _appBarFocusNode : _focusNode;
 
     Widget searchBar = AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      height: isSmall ? 45 : 55,
+      height: isSmall ? 48 : 55,
       decoration: BoxDecoration(
-        color: isSmall ? Colors.white : Colors.grey[100],
-        borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(30),
-          topRight: const Radius.circular(30),
-          bottomLeft: Radius.circular(showSuggestions ? 0 : 30),
-          bottomRight: Radius.circular(showSuggestions ? 0 : 30),
-        ),
+        color: isSmall ? colorScheme.surface : colorScheme.surfaceVariant.withOpacity(0.5),
+        borderRadius: BorderRadius.all(Radius.circular(30)),
         border: Border.all(
-          color: (isSmall && !_showWebView ? _appBarFocusNode.hasFocus : _isFocused) ? Colors.blue : Colors.grey[300]!,
+          color: (isSmall && !_showWebView ? _appBarFocusNode.hasFocus : _isFocused)
+              ? colorScheme.primary
+              : colorScheme.outline,
           width: 1.2,
         ),
-        boxShadow: isSmall ? [
-           BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 1))
-        ] : null,
       ),
       child: TextField(
         controller: _searchController,
@@ -607,20 +716,23 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           setState(() {});
         },
         style: const TextStyle(fontSize: 15),
+        // Centre verticalement le texte, améliorant l'alignement du placeholder.
+        textAlignVertical: TextAlignVertical.center,
         decoration: InputDecoration(
           hintText: 'Rechercher ou saisir une URL',
-          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+          hintStyle: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
           border: InputBorder.none,
-          prefixIcon: Icon(Icons.search, size: 20, color: Colors.grey[500]),
+          prefixIcon: Icon(Icons.search, size: 22, color: colorScheme.onSurfaceVariant),
           suffixIcon: IconButton(
             icon: Icon(
-              _isListening ? Icons.graphic_eq_rounded : Icons.mic, 
-              color: _isListening ? Colors.red : Colors.blue, 
-              size: 20
+              _isListening ? Icons.graphic_eq_rounded : Icons.mic,
+              color: _isListening ? colorScheme.error : colorScheme.primary,
+              size: 22
             ),
             onPressed: _listen,
           ),
-          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          // J'ai enlevé le contentPadding personnalisé qui causait le décalage.
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20), // Padding horizontal seulement
         ),
       ),
     );
@@ -635,14 +747,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return searchBar;
   }
 
-  Widget _buildQuickAction(String label, IconData icon, Color color) {
+  Widget _buildHistoryAction(String label, Color color) {
     return ActionChip(
-      avatar: Icon(icon, color: color, size: 14),
-      label: Text(label, style: const TextStyle(fontSize: 12)),
-      onPressed: () => _performSearch(label),
-      backgroundColor: Colors.white,
+      avatar: Icon(Icons.history, color: color, size: 18),
+      label: Text(label),
+      onPressed: () {
+        _searchController.text = label;
+        _performSearch(label);
+      },
+      backgroundColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      padding: const EdgeInsets.all(4),
     );
   }
 }
