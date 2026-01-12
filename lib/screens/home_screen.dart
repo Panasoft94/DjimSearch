@@ -604,76 +604,76 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 padding: const EdgeInsets.symmetric(horizontal: 25),
                 child: Column(
                   children: [
-                    const spacer(flex: 3),
+                    const Spacer(flex: 3),
 
-                    // animation: logo and title
-                    fadetransition(
-                      opacity: _logofade,
-                      child: slidetransition(
-                        position: _logoslide,
-                        child: row(
-                          mainaxisalignment: mainaxisalignment.center,
-                          // remplacement de l'ancien texte par le logo et le nouveau texte
+                    // ANIMATION: Logo and Title
+                    FadeTransition(
+                      opacity: _logoFade,
+                      child: SlideTransition(
+                        position: _logoSlide,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          // Remplacement de l'ancien texte par le logo et le nouveau texte
                           children: [
-                            // logo
-                            padding(
-                              padding: const edgeinsets.only(right: 5.0), // marge réduite pour rapprocher le logo du texte
-                              child: image.asset(
+                            // Logo
+                            Padding(
+                              padding: const EdgeInsets.only(right: 5.0), // Marge réduite pour rapprocher le logo du texte
+                              child: Image.asset(
                                 'assets/img/logo.png',
-                                height: 100, // augmenté de 60 à 80
+                                height: 100, // Augmenté de 60 à 80
                               ),
                             ),
-                            // texte "djim search" (utilisant le style m3)
-                            text('djim', style: textstyle(fontsize: 36, fontweight: fontweight.bold, color: colorscheme.primary, letterspacing: -2)), // réduit de 54 à 48
-                            text('search', style: textstyle(fontsize: 36, fontweight: fontweight.bold, color: colorscheme.error, letterspacing: -2)), // réduit de 54 à 48
+                            // Texte "Djim Search" (utilisant le style M3)
+                            Text('Djim', style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: colorScheme.primary, letterSpacing: -2)), // Réduit de 54 à 48
+                            Text('Search', style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: colorScheme.error, letterSpacing: -2)), // Réduit de 54 à 48
                           ],
                         ),
                       ),
                     ),
-                    const sizedbox(height: 40),
+                    const SizedBox(height: 40),
 
-                    // animation: search bar
-                    fadetransition(
-                      opacity: _searchfade,
-                      child: slidetransition(
-                        position: _searchslide,
-                        child: _buildsearchbar(issmall: false),
+                    // ANIMATION: Search Bar
+                    FadeTransition(
+                      opacity: _searchFade,
+                      child: SlideTransition(
+                        position: _searchSlide,
+                        child: _buildSearchBar(isSmall: false),
                       ),
                     ),
-                    const sizedbox(height: 30),
+                    const SizedBox(height: 30),
 
-                    // animation: quick actions (basé sur l'historique)
-                    fadetransition(
-                      opacity: _actionsfade,
-                      child: ignorepointer(
-                        ignoring: hidebuttons,
-                        child: animatedopacity(
-                          duration: const duration(milliseconds: 200),
-                          opacity: hidebuttons ? 0.0 : 1.0,
-                          child: wrap(
+                    // ANIMATION: Quick Actions (Basé sur l'historique)
+                    FadeTransition(
+                      opacity: _actionsFade,
+                      child: IgnorePointer(
+                        ignoring: hideButtons,
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 200),
+                          opacity: hideButtons ? 0.0 : 1.0,
+                          child: Wrap(
                             spacing: 12,
-                            runspacing: 12,
-                            children: _recenthistory
-                                .where((item) => item['history_query'] is string && (item['history_query'] as string).isnotempty)
+                            runSpacing: 12,
+                            children: _recentHistory
+                                .where((item) => item['history_query'] is String && (item['history_query'] as String).isNotEmpty)
                                 .map((item) {
-                              final query = item['history_query'] as string;
-                              return _buildhistoryaction(query, colorscheme.primary);
-                            }).tolist(),
+                              final query = item['history_query'] as String;
+                              return _buildHistoryAction(query, colorScheme.primary);
+                            }).toList(),
                           ),
                         ),
                       ),
                     ),
 
-                    const spacer(flex: 4),
+                    const Spacer(flex: 4),
 
-                    // animation: copyright
-                    fadetransition(
-                      opacity: _actionsfade,
-                      child: padding(
-                        padding: const edgeinsets.only(bottom: 20),
-                        child: text(
-                          'copyright © panasoft corporation',
-                          style: theme.texttheme.bodysmall?.copywith(color: colorscheme.onsurfacevariant),
+                    // ANIMATION: Copyright
+                    FadeTransition(
+                      opacity: _actionsFade,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 20),
+                        child: Text(
+                          'Copyright © Panasoft Corporation',
+                          style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
                         ),
                       ),
                     ),
