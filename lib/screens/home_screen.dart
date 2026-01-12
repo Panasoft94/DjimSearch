@@ -9,6 +9,7 @@ import 'login_screen.dart';
 import 'about_screen.dart';
 import 'settings_screen.dart';
 import 'history_screen.dart';
+import 'tab_groups_screen.dart'; // Ajout de l'import
 import '../db_service.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -21,7 +22,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   late final WebViewController controller;
   late final AnimationController _animController;
-  
+
   // Animation pour le Logo/Titre
   late final Animation<double> _logoFade;
   late final Animation<Offset> _logoSlide;
@@ -36,7 +37,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final FocusNode _appBarFocusNode = FocusNode();
   final LayerLink _layerLink = LayerLink();
   final DBService _dbService = DBService();
-  
+
   bool _isFocused = false;
   bool _showWebView = false;
   double _loadingProgress = 0;
@@ -46,7 +47,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   // Utilisateur connecté
   Map<String, dynamic>? _currentUser;
-  
+
   // Historique des dernières recherches
   List<Map<String, dynamic>> _recentHistory = [];
 
@@ -310,6 +311,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  Future<void> _deleteHistoryItem(int id) async {
+    await _dbService.deleteHistoryItem(id); // Assurez-vous que cette méthode existe dans DBService
+    _loadHistory(); // Recharger pour mettre à jour l'UI
+  }
+
   PopupMenuItem<String> _buildPopupItem(String text, IconData icon, String value, {bool isDestructive = false}) {
     final theme = Theme.of(context);
     final color = isDestructive ? theme.colorScheme.error : theme.colorScheme.onSurface;
@@ -349,6 +355,44 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ],
         ),
       ),
+    );
+  }
+
+  // Nouvelle méthode pour la fonctionnalité "Nouveau groupe"
+  void _showNewGroupDialog() {
+    final TextEditingController groupNameController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Nouveau Groupe d\'Onglets'),
+          content: TextField(
+            controller: groupNameController,
+            decoration: const InputDecoration(
+              hintText: 'Nom du groupe',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('ANNULER'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final name = groupNameController.text.isNotEmpty ? groupNameController.text : 'Groupe sans nom';
+                await _dbService.addTabGroup(name); // Sauvegarde réelle dans la DB
+                if (!mounted) return;
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Groupe "$name" créé avec succès.')),
+                );
+              },
+              child: const Text('CRÉER'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -437,7 +481,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     Navigator.push(context, _slideTransition(const HomeScreen()));
                     break;
                   case 'new_group':
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nouveau groupe (À venir)')));
+                    _showNewGroupDialog();
+                    break;
+                  case 'manage_groups': // Nouvelle action
+                    final result = await Navigator.push(context, _slideTransition(const TabGroupsScreen()));
+                    if (result != null && result is Map<String, dynamic>) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Groupe "${result['group_name']}" sélectionné.')),
+                      );
+                    }
                     break;
                   case 'history':
                     final selectedQuery = await Navigator.push(context, _slideTransition(const HistoryScreen()));
@@ -487,6 +539,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               itemBuilder: (context) => [
                 _buildPopupItem('Nouvel onglet', Icons.add_box_outlined, 'new_tab'),
                 _buildPopupItem('Nouveau groupe', Icons.create_new_folder_outlined, 'new_group'),
+                _buildPopupItem('Mes groupes', Icons.folder_copy_outlined, 'manage_groups'), // Ajout de l'item
                 const PopupMenuDivider(),
                 _buildPopupItem('Historique', Icons.history, 'history'),
                 _buildPopupItem('Téléchargements', Icons.download_rounded, 'downloads'),
@@ -657,7 +710,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                 .where((item) => item['history_query'] is String && (item['history_query'] as String).isNotEmpty)
                                 .map((item) {
                               final query = item['history_query'] as String;
-                              return _buildHistoryAction(query, colorScheme.primary);
+                              final id = item['history_id'] as int; // Ajout de l'ID pour la suppression
+                              return _buildHistoryAction(query, id, colorScheme.primary);
                             }).toList(),
                           ),
                         ),
@@ -747,16 +801,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return searchBar;
   }
 
-  Widget _buildHistoryAction(String label, Color color) {
-    return ActionChip(
+  Widget _buildHistoryAction(String label, int id, Color color) {
+    return InputChip(
       avatar: Icon(Icons.history, color: color, size: 18),
       label: Text(label),
       onPressed: () {
         _searchController.text = label;
         _performSearch(label);
       },
+      onDeleted: () => _deleteHistoryItem(id),
+      deleteIcon: const Icon(Icons.close, size: 18),
       backgroundColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero), // Retrait du border radius
     );
   }
 }

@@ -7,6 +7,8 @@ class DBService {
   static const String historyTable = 'history';
   static const String sessionTable = 'session';
   static const String settingsTable = 'settings';
+  static const String groupsTable = 'tab_groups';
+  static const String tabsTable = 'tabs';
   static const String databaseName = 'djimsearch.db';
 
   Future<Database> get database async {
@@ -21,10 +23,16 @@ class DBService {
 
     return await openDatabase(
       databasePath,
-      version: 4,
+      version: 6, // Passage à la version 6 pour forcer la création des tables
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
+      onConfigure: _onConfigure,
     );
+  }
+
+  // Activer les clés étrangères
+  Future _onConfigure(Database db) async {
+    await db.execute('PRAGMA foreign_keys = ON');
   }
 
   Future _onCreate(Database db, int version) async {
@@ -32,6 +40,8 @@ class DBService {
     await _createHistoryTable(db);
     await _createSessionTable(db);
     await _createSettingsTable(db);
+    await _createGroupsTable(db);
+    await _createTabsTable(db);
   }
 
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -43,6 +53,11 @@ class DBService {
     }
     if (oldVersion < 4) {
       await _createSettingsTable(db);
+    }
+    // Si la version est inférieure à 6, on s'assure que les tables de groupes existent
+    if (oldVersion < 6) {
+      await _createGroupsTable(db);
+      await _createTabsTable(db);
     }
   }
 
@@ -90,6 +105,64 @@ class DBService {
         value TEXT NOT NULL
       )
     ''');
+  }
+
+  Future _createGroupsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $groupsTable (
+        group_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_name TEXT NOT NULL,
+        group_date INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  Future _createTabsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $tabsTable (
+        tab_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        tab_url TEXT NOT NULL,
+        tab_title TEXT,
+        tab_date INTEGER NOT NULL,
+        FOREIGN KEY (group_id) REFERENCES $groupsTable(group_id) ON DELETE CASCADE
+      )
+    ''');
+  }
+
+  // --- Tab Groups Methods ---
+
+  Future<int> addTabGroup(String name) async {
+    final db = await database;
+    return await db.insert(groupsTable, {
+      'group_name': name,
+      'group_date': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getTabGroups() async {
+    final db = await database;
+    return await db.query(groupsTable, orderBy: 'group_date DESC');
+  }
+
+  Future<int> deleteTabGroup(int id) async {
+    final db = await database;
+    return await db.delete(groupsTable, where: 'group_id = ?', whereArgs: [id]);
+  }
+
+  Future<int> addTabToGroup(int groupId, String url, {String? title}) async {
+    final db = await database;
+    return await db.insert(tabsTable, {
+      'group_id': groupId,
+      'tab_url': url,
+      'tab_title': title,
+      'tab_date': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getTabsForGroup(int groupId) async {
+    final db = await database;
+    return await db.query(tabsTable, where: 'group_id = ?', whereArgs: [groupId], orderBy: 'tab_date ASC');
   }
 
   // --- Settings Methods ---
@@ -219,7 +292,6 @@ class DBService {
   }
 
   Future<List<Map<String, dynamic>>> getRecentHistoryForHome() async {
-    // Récupère les 5 dernières recherches pour l'écran d'accueil
     return await getHistory(limit: 5); 
   }
 
