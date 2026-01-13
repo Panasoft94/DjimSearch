@@ -5,7 +5,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
-import 'login_screen.dart'; 
+import 'login_screen.dart';
 import 'about_screen.dart';
 import 'settings_screen.dart';
 import 'history_screen.dart';
@@ -502,7 +502,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Téléchargements (À venir)')));
                     break;
                   case 'settings':
-                     Navigator.push(context, _slideTransition(const SettingsScreen()));
+                    Navigator.push(context, _slideTransition(const SettingsScreen()));
                     break;
                   case 'help':
                     _showHelpOptions();
@@ -561,23 +561,23 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ],
         bottom: _loadingProgress > 0 && _loadingProgress < 1
             ? PreferredSize(
-                preferredSize: const Size.fromHeight(2),
-                child: LinearProgressIndicator(
-                  value: _loadingProgress,
-                  backgroundColor: Colors.transparent,
-                  valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
-                ),
-              )
+          preferredSize: const Size.fromHeight(2),
+          child: LinearProgressIndicator(
+            value: _loadingProgress,
+            backgroundColor: Colors.transparent,
+            valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+          ),
+        )
             : null,
       ),
       floatingActionButton: _showWebView
           ? FloatingActionButton(
-              onPressed: () => controller.reload(),
-              backgroundColor: colorScheme.primary,
-              foregroundColor: colorScheme.onPrimary,
-              elevation: 4,
-              child: const Icon(Icons.refresh),
-            )
+        onPressed: () => controller.reload(),
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+        elevation: 4,
+        child: const Icon(Icons.refresh),
+      )
           : null,
       body: SafeArea(
         child: Stack(
@@ -633,8 +633,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         onPressed: onPressed,
         tooltip: tooltip,
         style: IconButton.styleFrom(
-          backgroundColor: Theme.of(context).colorScheme.surface,
-          side: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.5))
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            side: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.5))
         ),
       ),
     );
@@ -779,9 +779,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           prefixIcon: Icon(Icons.search, size: 22, color: colorScheme.onSurfaceVariant),
           suffixIcon: IconButton(
             icon: Icon(
-              _isListening ? Icons.graphic_eq_rounded : Icons.mic,
-              color: _isListening ? colorScheme.error : colorScheme.primary,
-              size: 22
+                _isListening ? Icons.graphic_eq_rounded : Icons.mic,
+                color: _isListening ? colorScheme.error : colorScheme.primary,
+                size: 22
             ),
             onPressed: _listen,
           ),

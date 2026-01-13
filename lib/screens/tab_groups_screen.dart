@@ -1,3 +1,4 @@
+import 'package:djimsearch/screens/group_details_screen.dart';
 import 'package:flutter/material.dart';
 import '../db_service.dart';
 
@@ -37,38 +38,75 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
 
   void _showNewGroupDialog() {
     final TextEditingController groupNameController = TextEditingController();
-    showDialog(
+    showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Nouveau Groupe'),
-          content: TextField(
-            controller: groupNameController,
-            autofocus: true,
-            decoration: const InputDecoration(
-              hintText: 'Nom du groupe',
-              border: OutlineInputBorder(),
-            ),
+        return Padding(
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Nouveau Groupe',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Créez un nouvel espace pour organiser vos onglets.',
+                 style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 24),
+              TextField(
+                controller: groupNameController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Nom du groupe',
+                  hintText: 'Ex: Recettes de cuisine',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(12))
+                  ),
+                ),
+                onSubmitted: (value) async {
+                   final name = value.isNotEmpty ? value : 'Groupe sans nom';
+                  await _dbService.addTabGroup(name);
+                  if (mounted) {
+                    Navigator.pop(context);
+                    _loadGroups();
+                  }
+                },
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Annuler'),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.add_rounded),
+                    onPressed: () async {
+                      final name = groupNameController.text.isNotEmpty
+                          ? groupNameController.text
+                          : 'Groupe sans nom';
+                      await _dbService.addTabGroup(name);
+                      if (mounted) {
+                        Navigator.pop(context);
+                        _loadGroups();
+                      }
+                    },
+                    label: const Text('Créer le groupe'),
+                  ),
+                ],
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('ANNULER'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final name = groupNameController.text.isNotEmpty
-                    ? groupNameController.text
-                    : 'Groupe sans nom';
-                await _dbService.addTabGroup(name);
-                if (mounted) {
-                  Navigator.pop(context);
-                  _loadGroups();
-                }
-              },
-              child: const Text('CRÉER'),
-            ),
-          ],
         );
       },
     );
@@ -245,9 +283,16 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
                                         ],
                                       ),
                                     ),
-                                    Icon(Icons.arrow_forward_ios_rounded,
-                                      size: 16,
-                                      color: colorScheme.onSurfaceVariant.withOpacity(0.5)
+                                    IconButton(
+                                      icon: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => GroupDetailsScreen(group: group),
+                                          ),
+                                        ).then((_) => _loadGroups());
+                                      },
                                     ),
                                   ],
                                 ),
