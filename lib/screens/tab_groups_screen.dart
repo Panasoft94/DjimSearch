@@ -20,6 +20,19 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
     _loadGroups();
   }
 
+  // NOUVEAU: Méthode de transition
+  PageRouteBuilder _slideTransition(Widget page) {
+    return PageRouteBuilder(
+      pageBuilder: (_, __, ___) => page,
+      transitionsBuilder: (_, animation, __, child) {
+        return SlideTransition(
+          position: Tween(begin: const Offset(1, 0), end: Offset.zero).animate(animation),
+          child: child,
+        );
+      },
+    );
+  }
+
   Future<void> _loadGroups() async {
     setState(() => _isLoading = true);
     final groups = await _dbService.getTabGroups();
@@ -34,6 +47,31 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
   Future<void> _deleteGroup(int id) async {
     await _dbService.deleteTabGroup(id);
     _loadGroups();
+  }
+  
+  Future<void> _clearAllGroups() async {
+     final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer tous les groupes ?'),
+        content: const Text('Voulez-vous vraiment supprimer tous les groupes d\'onglets ? Cette action est irréversible et supprimera tous les onglets qu\'ils contiennent.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('ANNULER')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('SUPPRIMER TOUT')),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final groups = await _dbService.getTabGroups();
+      for (final group in groups) {
+        await _dbService.deleteTabGroup(group['group_id'] as int);
+      }
+      _loadGroups();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tous les groupes ont été supprimés.')));
+      }
+    }
   }
 
   void _showNewGroupDialog() {
@@ -66,7 +104,7 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
                 autofocus: true,
                 decoration: const InputDecoration(
                   labelText: 'Nom du groupe',
-                  hintText: 'Ex: Recettes de cuisine',
+                  hintText: 'Ex: IT - Developpement',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.all(Radius.circular(12))
                   ),
@@ -144,7 +182,14 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
               IconButton(
                 icon: const Icon(Icons.refresh_rounded),
                 onPressed: _loadGroups,
+                tooltip: 'Actualiser la liste',
               ),
+              if (!_isLoading && _groups.isNotEmpty)
+                IconButton(
+                  icon: Icon(Icons.delete_sweep_rounded, color: colorScheme.error),
+                  onPressed: _clearAllGroups,
+                  tooltip: 'Supprimer tous les groupes',
+                ),
             ],
           ),
           if (_isLoading)
@@ -195,11 +240,6 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
                         ),
                       ),
                       const SizedBox(height: 32),
-                      FilledButton.icon(
-                        onPressed: _showNewGroupDialog,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Créer mon premier groupe'),
-                      ),
                     ],
                   ),
                 ),
@@ -248,6 +288,7 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
                             color: colorScheme.surfaceVariant.withOpacity(0.3),
                             child: InkWell(
                               borderRadius: BorderRadius.circular(20),
+                              // Sélectionne le groupe actif
                               onTap: () => Navigator.pop(context, group),
                               child: Padding(
                                 padding: const EdgeInsets.all(16),
@@ -283,16 +324,25 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
                                         ],
                                       ),
                                     ),
+                                    // Bouton d'action pour les détails du groupe
                                     IconButton(
-                                      icon: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
-                                      onPressed: () {
-                                        Navigator.push(
+                                      icon: Icon(Icons.info_outline_rounded, size: 20, color: colorScheme.onSurfaceVariant),
+                                      onPressed: () async {
+                                        final result = await Navigator.push(
                                           context,
-                                          MaterialPageRoute(
-                                            builder: (context) => GroupDetailsScreen(group: group),
-                                          ),
-                                        ).then((_) => _loadGroups());
+                                          _slideTransition(GroupDetailsScreen(group: group)), // MODIFIÉ: Utilisation de _slideTransition
+                                        );
+                                        // Si le groupe a été supprimé depuis l'écran de détails, recharger la liste
+                                        if (result == true) {
+                                          _loadGroups();
+                                        } else if (result is String) {
+                                          // Si une URL a été retournée (ouverture d'un onglet), retourner à l'écran d'accueil
+                                          if (mounted) Navigator.pop(context, result);
+                                        } else {
+                                          _loadGroups(); // Simple actualisation
+                                        }
                                       },
+                                      tooltip: 'Détails du groupe',
                                     ),
                                   ],
                                 ),
@@ -309,15 +359,14 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
             ),
         ],
       ),
-      floatingActionButton: _groups.isNotEmpty
-          ? FloatingActionButton.extended(
-              onPressed: _showNewGroupDialog,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Nouveau groupe'),
-              backgroundColor: colorScheme.primaryContainer,
-              foregroundColor: colorScheme.onPrimaryContainer,
-            )
-          : null,
+      // Le FAB est maintenant toujours visible pour créer un nouveau groupe
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showNewGroupDialog,
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Nouveau groupe'),
+        backgroundColor: colorScheme.primaryContainer,
+        foregroundColor: colorScheme.onPrimaryContainer,
+      ),
     );
   }
 }

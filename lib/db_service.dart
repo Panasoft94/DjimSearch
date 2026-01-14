@@ -9,6 +9,7 @@ class DBService {
   static const String settingsTable = 'settings';
   static const String groupsTable = 'tab_groups';
   static const String tabsTable = 'tabs';
+  static const String downloadsTable = 'downloads';
   static const String databaseName = 'djimsearch.db';
 
   Future<Database> get database async {
@@ -23,7 +24,7 @@ class DBService {
 
     return await openDatabase(
       databasePath,
-      version: 6, // Passage à la version 6 pour forcer la création des tables
+      version: 7, // Passage à la version 7 pour ajouter la table des téléchargements
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: _onConfigure,
@@ -42,6 +43,7 @@ class DBService {
     await _createSettingsTable(db);
     await _createGroupsTable(db);
     await _createTabsTable(db);
+    await _createDownloadsTable(db);
   }
 
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -54,10 +56,12 @@ class DBService {
     if (oldVersion < 4) {
       await _createSettingsTable(db);
     }
-    // Si la version est inférieure à 6, on s'assure que les tables de groupes existent
     if (oldVersion < 6) {
       await _createGroupsTable(db);
       await _createTabsTable(db);
+    }
+    if (oldVersion < 7) {
+      await _createDownloadsTable(db);
     }
   }
 
@@ -130,6 +134,42 @@ class DBService {
     ''');
   }
 
+  Future _createDownloadsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $downloadsTable (
+        download_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_name TEXT NOT NULL,
+        file_url TEXT NOT NULL,
+        file_path TEXT,
+        file_size TEXT,
+        download_date INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  // --- Downloads Methods ---
+
+  Future<int> addDownload(String fileName, String url, {String? path, String? size}) async {
+    final db = await database;
+    return await db.insert(downloadsTable, {
+      'file_name': fileName,
+      'file_url': url,
+      'file_path': path,
+      'file_size': size,
+      'download_date': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getDownloads() async {
+    final db = await database;
+    return await db.query(downloadsTable, orderBy: 'download_date DESC');
+  }
+
+  Future<int> deleteDownload(int id) async {
+    final db = await database;
+    return await db.delete(downloadsTable, where: 'download_id = ?', whereArgs: [id]);
+  }
+
   // --- Tab Groups Methods ---
 
   Future<int> addTabGroup(String name) async {
@@ -138,6 +178,18 @@ class DBService {
       'group_name': name,
       'group_date': DateTime.now().millisecondsSinceEpoch,
     });
+  }
+  
+  Future<Map<String, dynamic>?> getTabGroupById(int id) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      groupsTable,
+      where: 'group_id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (maps.isNotEmpty) return maps.first;
+    return null;
   }
 
   Future<List<Map<String, dynamic>>> getTabGroups() async {
