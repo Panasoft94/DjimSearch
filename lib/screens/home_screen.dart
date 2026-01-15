@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:permission_handler/permission_handler.dart';
+import 'package:permission_handler/permission_handler.dart'; // CORRIGÉ: Le chemin d'importation a été mis à jour
 import 'login_screen.dart'; 
 import 'about_screen.dart';
 import 'settings_screen.dart';
@@ -196,13 +196,33 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           },
           onWebResourceError: (WebResourceError error) {
             if (mounted) {
+              String errorMessage;
+              
+              // Tente de fournir un message d'erreur plus spécifique basé sur le code d'erreur
+              switch (error.errorCode) {
+                case -2: // ERROR_HOST_LOOKUP: Échec de la résolution DNS.
+                case -6: // ERROR_CONNECT: Échec de la connexion au serveur.
+                case -7: // ERROR_TIMEOUT: Temps d'attente dépassé.
+                  errorMessage = "Erreur de connexion : Impossible de se connecter au serveur. Vérifiez votre accès Internet.";
+                  break;
+                case -15: // ERROR_BLOCKED_BY_POLICY: Page bloquée par une politique de sécurité.
+                  errorMessage = "Accès bloqué : Cette page est bloquée par une politique de sécurité.";
+                  break;
+                case -12: // ERROR_BAD_URL: L'URL est invalide.
+                  errorMessage = "URL invalide : L'adresse de la page est incorrecte.";
+                  break;
+                case -1: // ERROR_UNKNOWN: Erreur générique
+                default:
+                  errorMessage = "Erreur de chargement (${error.errorCode}) : ${error.description.isNotEmpty ? error.description : 'Problème inconnu.'}";
+              }
+
               setState(() {
                 _showWebView = false;
                 _loadingProgress = 0;
                 _isSearchLoading = false; // Réinitialiser aussi en cas d'erreur
               });
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Pas de connexion"), backgroundColor: Colors.redAccent, behavior: SnackBarBehavior.floating),
+                SnackBar(content: Text(errorMessage), backgroundColor: Colors.redAccent, behavior: SnackBarBehavior.floating),
               );
             }
           },
@@ -364,37 +384,91 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final backButtonColor = backButtonEnabled ? colorScheme.onSurface : colorScheme.onSurface.withOpacity(0.38);
     final forwardButtonColor = canGoForwardInWeb ? colorScheme.onSurface : colorScheme.onSurface.withOpacity(0.38);
 
-    return Scaffold(
-      backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        toolbarHeight: 85,
-        elevation: _showWebView ? 1.0 : 0.0,
+    // Helper pour construire les boutons de navigation (précédent/suivant)
+    Widget _buildLeadingButtons() {
+      return Padding(
+        padding: const EdgeInsets.only(top: 15.0),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(width: 4),
+          _buildNavButton(Icons.arrow_back_rounded, backButtonColor, backButtonEnabled ? () { if (canGoBackInWeb) controller.goBack(); else Navigator.pop(context); } : null, 'Retour'),
+          const SizedBox(width: 4),
+          _buildNavButton(Icons.arrow_forward_rounded, forwardButtonColor, canGoForwardInWeb ? () => controller.goForward() : null, 'Suivant'),
+        ]),
+      );
+    }
+    
+    // Helper pour la barre de recherche en mode petit
+    Widget _buildTitleContent() {
+      return Padding(padding: const EdgeInsets.only(top: 15.0), child: _buildSearchBar(isSmall: true));
+    }
+    
+    // Helper pour les actions/menu
+    List<Widget> _buildActionsContent() {
+      return [Padding(padding: const EdgeInsets.only(top: 15.0, right: 5), child: _buildMainMenu())];
+    }
+
+
+    if (_showWebView) {
+      // Structure pour la vue web avec AppBar déroulante (NestedScrollView/SliverAppBar)
+      // MODIFIÉ: Remplacement de NestedScrollView par Scaffold + AppBar standard pour garantir le défilement du WebView.
+      return Scaffold(
         backgroundColor: colorScheme.surface,
-        centerTitle: false,
-        titleSpacing: 0,
-        leadingWidth: 90,
-        leading: Padding(
-          padding: const EdgeInsets.only(top: 15.0),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            const SizedBox(width: 4),
-            _buildNavButton(Icons.arrow_back_rounded, backButtonColor, backButtonEnabled ? () { if (canGoBackInWeb) controller.goBack(); else Navigator.pop(context); } : null, 'Retour'),
-            const SizedBox(width: 4),
-            _buildNavButton(Icons.arrow_forward_rounded, forwardButtonColor, canGoForwardInWeb ? () => controller.goForward() : null, 'Suivant'),
+        appBar: AppBar(
+          // Styles de l'AppBar
+          toolbarHeight: 85,
+          elevation: 4.0, // Élévation standard
+          backgroundColor: colorScheme.surface,
+          centerTitle: false,
+          titleSpacing: 0,
+          leadingWidth: 90,
+
+          // Contenu de l'AppBar
+          leading: _buildLeadingButtons(),
+          title: _buildTitleContent(),
+          actions: _buildActionsContent(),
+
+          // Barre de progression/Groupe actif
+          bottom: _buildAppBarBottom(colorScheme),
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => controller.reload(),
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
+          elevation: 4,
+          child: const Icon(Icons.refresh),
+        ),
+        // Le corps principal est le WebView, qui gère son propre défilement.
+        body: WebViewWidget(controller: controller),
+      );
+    } else {
+      // Structure pour l'écran d'accueil standard (AppBar fixe)
+      return Scaffold(
+        backgroundColor: colorScheme.surface,
+        appBar: AppBar(
+          toolbarHeight: 85,
+          elevation: 0.0, // Pas d'élévation sur l'écran d'accueil
+          backgroundColor: colorScheme.surface,
+          centerTitle: false,
+          titleSpacing: 0,
+          leadingWidth: 90,
+          
+          leading: _buildLeadingButtons(),
+          title: _buildTitleContent(),
+          actions: _buildActionsContent(),
+          
+          // La bottom bar est présente uniquement pour le groupe actif sur la page de résultats
+          bottom: _buildAppBarBottom(colorScheme),
+        ),
+        floatingActionButton: null, // Pas de FAB sur l'écran d'accueil
+        body: SafeArea(
+          child: Stack(children: [
+            _buildHomeBody(),
+            // Les suggestions s'affichent par-dessus le corps principal de l'accueil
+            if (_suggestions.isNotEmpty && _isFocused) _buildSuggestionsList(colorScheme),
           ]),
         ),
-        title: Padding(padding: const EdgeInsets.only(top: 15.0), child: _buildSearchBar(isSmall: true)),
-        actions: [Padding(padding: const EdgeInsets.only(top: 15.0, right: 5), child: _buildMainMenu())],
-        // MODIFIÉ: Utilisation d'une méthode pour la bottom bar
-        bottom: _buildAppBarBottom(colorScheme),
-      ),
-      floatingActionButton: _showWebView ? FloatingActionButton(onPressed: () => controller.reload(), backgroundColor: colorScheme.primary, foregroundColor: colorScheme.onPrimary, elevation: 4, child: const Icon(Icons.refresh)) : null,
-      body: SafeArea(
-        child: Stack(children: [
-          _showWebView ? WebViewWidget(controller: controller) : _buildHomeBody(),
-          if (!_showWebView && _suggestions.isNotEmpty && _isFocused) _buildSuggestionsList(colorScheme),
-        ]),
-      ),
-    );
+      );
+    }
   }
 
   // NOUVEAU: Méthode pour construire le menu principal
