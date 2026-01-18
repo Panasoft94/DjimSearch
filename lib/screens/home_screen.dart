@@ -21,7 +21,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin { // MODIFIÉ: Ajout de AutomaticKeepAliveClientMixin
   late final WebViewController controller;
   late final AnimationController _animController;
 
@@ -64,6 +64,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   bool _isListening = false;
 
   static const String googleSearchUrl = 'https://www.google.com/search?q=';
+
+  // NOUVEAU: Méthode pour préserver l'état (WebView)
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -196,6 +200,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           },
           onWebResourceError: (WebResourceError error) {
             if (mounted) {
+              // MODIFIÉ: Ignorer les erreurs de ressources (images, scripts, etc.) qui ne sont pas liées au chargement du cadre principal.
+              if (error.isForMainFrame == false) {
+                return;
+              }
+
               String errorMessage;
               
               // Tente de fournir un message d'erreur plus spécifique basé sur le code d'erreur
@@ -313,7 +322,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   void _performSearch(String query) {
     if (query.isNotEmpty) {
-      final searchUrl = '$googleSearchUrl${Uri.encodeComponent(query)}';
+      final searchUrl = query.startsWith('http://') || query.startsWith('https://') || query.startsWith('file://') ? query : '$googleSearchUrl${Uri.encodeComponent(query)}';
       controller.loadRequest(Uri.parse(searchUrl));
 
       // MODIFIÉ: Ajout conditionnel à l'historique
@@ -374,6 +383,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // NOUVEAU: Appel obligatoire pour le AutomaticKeepAliveClientMixin
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -483,9 +493,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           case 'new_group': _showNewGroupDialog(); break;
           case 'manage_groups':
             final result = await Navigator.push(context, _slideTransition(const TabGroupsScreen()));
-            if (result != null && result is Map<String, dynamic>) {
-              _setActiveGroup(result); // UTILISE LA NOUVELLE MÉTHODE
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Groupe "${result['group_name']}" activé.')));
+            if (result != null) {
+              if (result is Map<String, dynamic>) {
+                // Cas 1: Un groupe a été sélectionné pour devenir le groupe actif
+                _setActiveGroup(result); // UTILISE LA NOUVELLE MÉTHODE
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Groupe "${result['group_name']}" activé.')));
+              } else if (result is String) {
+                // Cas 2: Une URL a été retournée (clic sur un onglet dans GroupDetails)
+                _searchController.text = result;
+                _performSearch(result);
+              }
             }
             break;
           // NOUVEAU: Action pour retirer le groupe actif

@@ -153,8 +153,9 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                           title: Text(tab['tab_title'] ?? 'Sans titre', maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.titleMedium),
                           subtitle: Text(tab['tab_url'], maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
                           onTap: () {
-                            // Ouvre l'URL dans le navigateur principal (Home Screen)
-                            Navigator.pop(context, tab['tab_url']);
+                            final urlToSearch = tab['tab_url'] as String;
+                            // Retourne l'URL à l'écran précédent pour déclencher la recherche/navigation sur l'écran d'accueil
+                            Navigator.pop(context, urlToSearch);
                           },
                           trailing: Icon(Icons.open_in_new_rounded, size: 20, color: colorScheme.onSurfaceVariant),
                         ),
