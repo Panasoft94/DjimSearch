@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'login_screen.dart';
 import 'about_screen.dart';
 import '../db_service.dart';
+import '../widgets/custom_app_bar.dart';
+import '../widgets/custom_back_button.dart';
+import '../utils/design_constants.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});

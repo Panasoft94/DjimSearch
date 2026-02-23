@@ -4,15 +4,18 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:permission_handler/permission_handler.dart'; // CORRIGÉ: Le chemin d'importation a été mis à jour
-import 'login_screen.dart'; 
+import 'package:permission_handler/permission_handler.dart';
+import 'login_screen.dart';
 import 'about_screen.dart';
 import 'settings_screen.dart';
 import 'history_screen.dart';
 import 'tab_groups_screen.dart'; 
 import 'help_screen.dart';
-import 'downloads_screen.dart'; // NOUVEAU: Importation de la page des téléchargements
+import 'downloads_screen.dart';
 import '../db_service.dart';
+import '../widgets/search_bar_widget.dart';
+import '../themes/app_colors.dart';
+import '../utils/design_constants.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,7 +24,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin { // MODIFIÉ: Ajout de AutomaticKeepAliveClientMixin
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   late final WebViewController controller;
   late final AnimationController _animController;
 
@@ -37,7 +40,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final FocusNode _appBarFocusNode = FocusNode();
-  final LayerLink _layerLink = LayerLink();
   final DBService _dbService = DBService();
 
   bool _isFocused = false;
@@ -55,8 +57,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   // --- MODIFICATIONS POUR LE GROUPE ACTIF ---
   Map<String, dynamic>? _activeGroup;
-  bool _isSearchLoading = false; // Pour savoir quand une sauvegarde est pertinente
-  static const String _activeGroupKey = 'active_tab_group_id'; // Clé de persistance
+  bool _isSearchLoading = false;
+  static const String _activeGroupKey = 'active_tab_group_id';
   // --- FIN DES MODIFICATIONS ---
 
   // Reconnaissance vocale
@@ -65,22 +67,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   static const String googleSearchUrl = 'https://www.google.com/search?q=';
 
-  // NOUVEAU: Méthode pour préserver l'état (WebView)
-  @override
-  bool get wantKeepAlive => true;
-
   @override
   void initState() {
     super.initState();
     _initController();
     _initSpeech();
     _loadSession();
-    _loadHistory(); // Charger l'historique
-    _loadActiveGroup(); // NOUVEAU: Charger le groupe actif
+    _loadHistory();
+    _loadActiveGroup();
 
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200), // Durée plus longue pour l'effet d'échelonnement
+      duration: const Duration(milliseconds: 1200),
     );
 
     _logoFade = CurvedAnimation(parent: _animController, curve: const Interval(0.0, 0.5, curve: Curves.easeOut));
@@ -91,19 +89,23 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     _animController.forward();
 
-    _focusNode.addListener(() {
-      setState(() {
-        _isFocused = _focusNode.hasFocus;
-        if (!_isFocused) {
-          Future.delayed(const Duration(milliseconds: 200), () {
-            if (mounted && !_focusNode.hasFocus) {
-              setState(() {
-                _suggestions = [];
-              });
-            }
-          });
-        }
-      });
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (!mounted) return;
+    setState(() {
+      _isFocused = _focusNode.hasFocus;
+      if (!_isFocused) {
+        // Délai pour permettre le clic sur une suggestion avant de vider la liste
+        Future.delayed(const Duration(milliseconds: 200), () {
+          if (mounted && !_focusNode.hasFocus) {
+            setState(() {
+              _suggestions = [];
+            });
+          }
+        });
+      }
     });
   }
 
@@ -158,6 +160,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   @override
   void dispose() {
     _animController.dispose();
+    _focusNode.removeListener(_onFocusChange);
     _focusNode.dispose();
     _appBarFocusNode.dispose();
     _searchController.dispose();
@@ -285,23 +288,27 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       var status = await Permission.microphone.request();
       if (status.isGranted) {
         bool available = await _speech.initialize(onStatus: (val) {
-          if (val == 'done' || val == 'notListening') setState(() => _isListening = false);
-        }, onError: (val) => setState(() => _isListening = false));
+          if ((val == 'done' || val == 'notListening') && mounted) setState(() => _isListening = false);
+        }, onError: (val) { if (mounted) setState(() => _isListening = false); });
         if (available) {
-          setState(() => _isListening = true);
-          _speech.listen(onResult: (val) => setState(() {
-            _searchController.text = val.recognizedWords;
-            if (val.finalResult) {
-              _isListening = false;
-              _performSearch(val.recognizedWords);
+          if (mounted) setState(() => _isListening = true);
+          _speech.listen(onResult: (val) {
+            if (mounted) {
+              setState(() {
+                _searchController.text = val.recognizedWords;
+                if (val.finalResult) {
+                  _isListening = false;
+                  _performSearch(val.recognizedWords);
+                }
+              });
             }
-          }));
+          });
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Accès au micro refusé")));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Accès au micro refusé")));
       }
     } else {
-      setState(() => _isListening = false);
+      if (mounted) setState(() => _isListening = false);
       _speech.stop();
     }
   }
@@ -383,7 +390,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // NOUVEAU: Appel obligatoire pour le AutomaticKeepAliveClientMixin
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -426,8 +432,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         appBar: AppBar(
           // Styles de l'AppBar
           toolbarHeight: 85,
-          elevation: 4.0, // Élévation standard
+          elevation: 0,
+          scrolledUnderElevation: 4,
           backgroundColor: colorScheme.surface,
+          surfaceTintColor: Colors.transparent,
           centerTitle: false,
           titleSpacing: 0,
           leadingWidth: 90,
@@ -456,8 +464,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         backgroundColor: colorScheme.surface,
         appBar: AppBar(
           toolbarHeight: 85,
-          elevation: 0.0, // Pas d'élévation sur l'écran d'accueil
+          elevation: 0,
+          scrolledUnderElevation: 0,
           backgroundColor: colorScheme.surface,
+          surfaceTintColor: Colors.transparent,
           centerTitle: false,
           titleSpacing: 0,
           leadingWidth: 90,
@@ -471,11 +481,29 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
         floatingActionButton: null, // Pas de FAB sur l'écran d'accueil
         body: SafeArea(
-          child: Stack(children: [
-            _buildHomeBody(),
-            // Les suggestions s'affichent par-dessus le corps principal de l'accueil
-            if (_suggestions.isNotEmpty && _isFocused) _buildSuggestionsList(colorScheme),
-          ]),
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: MediaQuery.of(context).size.height - MediaQuery.of(context).padding.top - 85, // 85 = toolbarHeight
+              ),
+              child: IntrinsicHeight(
+                child: Stack(
+                  children: [
+                    _buildHomeBody(),
+                    // Les suggestions s'affichent par-dessus
+                    if (_suggestions.isNotEmpty && _isFocused)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: _buildSuggestionsList(colorScheme),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       );
     }
@@ -615,122 +643,376 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final colorScheme = theme.colorScheme;
     bool hideButtons = _suggestions.isNotEmpty && _isFocused;
 
-    return LayoutBuilder(builder: (context, constraints) => SingleChildScrollView(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      child: ConstrainedBox(constraints: BoxConstraints(minHeight: constraints.maxHeight), child: IntrinsicHeight(child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 25),
-        child: Column(children: [
-          const Spacer(flex: 3),
-          FadeTransition(opacity: _logoFade, child: SlideTransition(position: _logoSlide, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Padding(padding: const EdgeInsets.only(right: 5.0), child: Image.asset('assets/img/logo.png', height: 100)), Text('Djim', style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: colorScheme.primary, letterSpacing: -2)), Text('Search', style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: colorScheme.error, letterSpacing: -2))]))),
-          const SizedBox(height: 40),
-          FadeTransition(opacity: _searchFade, child: SlideTransition(position: _searchSlide, child: _buildSearchBar(isSmall: false))),
-          // NOUVEAU: Affichage du groupe actif sur l'écran d'accueil
-          if (_activeGroup != null && !_showWebView) Padding(padding: const EdgeInsets.only(top: 20), child: Chip(label: Text('Groupe actif : ${_activeGroup!['group_name']}'), onDeleted: () => _setActiveGroup(null))), // UTILISE LA NOUVELLE MÉTHODE
-          const SizedBox(height: 30),
-          FadeTransition(opacity: _actionsFade, child: IgnorePointer(ignoring: hideButtons, child: AnimatedOpacity(duration: const Duration(milliseconds: 200), opacity: hideButtons ? 0.0 : 1.0, child: Wrap(spacing: 12, runSpacing: 12, children: _recentHistory.where((item) => item['history_query'] is String && (item['history_query'] as String).isNotEmpty).map((item) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.xl),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center, // Utiliser l'alignement au lieu de Spacer dans un scroll
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const SizedBox(height: Spacing.xxxl), // Remplace Spacer(flex: 2)
+
+          // Logo et titre animés
+          FadeTransition(
+            opacity: _logoFade,
+            child: SlideTransition(
+              position: _logoSlide,
+              child: Column(
+                children: [
+                  // Logo
+                  Image.asset(
+                    'assets/img/logo.png',
+                    height: 92,
+                    width: 92,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(height: 24),
+                  // Titre "DjimSearch"
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        'Djim',
+                        style: theme.textTheme.displayLarge?.copyWith(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      Text(
+                        'Search',
+                        style: theme.textTheme.displayLarge?.copyWith(
+                          color: colorScheme.error,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: Spacing.xxxl),
+
+          // Barre de recherche animée
+          FadeTransition(
+            opacity: _searchFade,
+            child: SlideTransition(
+              position: _searchSlide,
+              child: _buildSearchBar(isSmall: false),
+            ),
+          ),
+
+          // Groupe actif (badge)
+          if (_activeGroup != null && !_showWebView)
+            Padding(
+              padding: const EdgeInsets.only(top: Spacing.xl),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Spacing.lg,
+                  vertical: Spacing.md,
+                ),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.08),
+                  border: Border.all(
+                    color: colorScheme.primary.withValues(alpha: 0.3),
+                    width: 1.5,
+                  ),
+                  borderRadius: BorderRadius.circular(Spacing.radiusRound),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.folder_open_rounded,
+                      size: 18,
+                      color: colorScheme.primary,
+                    ),
+                    const SizedBox(width: Spacing.md),
+                    Text(
+                      'Groupe actif: ${_activeGroup!['group_name']}',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: Spacing.md),
+                    InkWell(
+                      onTap: () => _setActiveGroup(null),
+                      child: Icon(
+                        Icons.close,
+                        size: 18,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          const SizedBox(height: Spacing.xxxl),
+
+          // Historique récent avec animations
+          FadeTransition(
+            opacity: _actionsFade,
+            child: IgnorePointer(
+              ignoring: hideButtons,
+              child: AnimatedOpacity(
+                duration: AnimationDurations.normal,
+                opacity: hideButtons ? 0.0 : 1.0,
+                child: _buildHistorySection(colorScheme, theme),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: Spacing.xxxl), // Remplace Spacer(flex: 3)
+
+          // Copyright
+          FadeTransition(
+            opacity: _actionsFade,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: Spacing.lg),
+              child: Text(
+                '© 2024 Panasoft Corporation',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: Spacing.lg),
+        ],
+      ),
+    );
+  }
+
+  /// Construit la section historique récent avec meilleur design
+  Widget _buildHistorySection(ColorScheme colorScheme, ThemeData theme) {
+    final recentItems = _recentHistory
+        .where((item) => item['history_query'] is String && (item['history_query'] as String).isNotEmpty)
+        .take(4)
+        .toList();
+
+    if (recentItems.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          'Récemment cherchés',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const SizedBox(height: Spacing.lg),
+        Wrap(
+          spacing: Spacing.md,
+          runSpacing: Spacing.md,
+          alignment: WrapAlignment.center,
+          children: recentItems.map((item) {
             final query = item['history_query'] as String;
             final id = item['history_id'] as int;
-            return _buildHistoryAction(query, id, colorScheme.primary);
-          }).toList())))),
-          const Spacer(flex: 4),
-          FadeTransition(opacity: _actionsFade, child: Padding(padding: const EdgeInsets.only(bottom: 20), child: Text('Copyright © Panasoft Corporation', style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)))),
-        ]),
-      ))),
-    ));
+            return _buildHistoryChip(query, id, colorScheme, theme);
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  /// Construit une puce d'historique élégante
+  Widget _buildHistoryChip(String label, int id, ColorScheme colorScheme, ThemeData theme) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          _searchController.text = label;
+          _performSearch(label);
+        },
+        borderRadius: BorderRadius.circular(Spacing.radiusMedium),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: Spacing.lg,
+            vertical: Spacing.md,
+          ),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceVariant.withValues(alpha: 0.6),
+            border: Border.all(
+              color: colorScheme.outline.withValues(alpha: 0.2),
+              width: 1,
+            ),
+            borderRadius: BorderRadius.circular(Spacing.radiusMedium),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.history,
+                size: 16,
+                color: colorScheme.primary,
+              ),
+              const SizedBox(width: Spacing.sm),
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(width: Spacing.sm),
+              GestureDetector(
+                onTap: () => _deleteHistoryItem(id),
+                child: Icon(
+                  Icons.close,
+                  size: 14,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildSearchBar({required bool isSmall}) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     FocusNode currentFocusNode = isSmall && !_showWebView ? _appBarFocusNode : _focusNode;
 
-    Widget searchBarContent = AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        height: isSmall ? 48 : 55,
-        decoration: BoxDecoration(
-          color: isSmall ? colorScheme.surface : colorScheme.surfaceVariant.withOpacity(0.5),
-          borderRadius: const BorderRadius.all(Radius.circular(30)),
-          border: Border.all(color: currentFocusNode.hasFocus ? colorScheme.primary : colorScheme.outline, width: 1.2),
-        ),
-        child: TextField(
-          controller: _searchController,
-          focusNode: currentFocusNode,
-          onSubmitted: _performSearch,
-          onChanged: (value) {
-            _fetchSuggestions(value);
-            setState(() {});
-          },
-          style: const TextStyle(fontSize: 15),
-          textAlignVertical: TextAlignVertical.center,
-          decoration: InputDecoration(
-            hintText: 'Rechercher ou saisir une URL',
-            hintStyle: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
-            border: InputBorder.none,
-            prefixIcon: Icon(Icons.search, size: 22, color: colorScheme.onSurfaceVariant),
-            suffixIcon: IconButton(icon: Icon(_isListening ? Icons.graphic_eq_rounded : Icons.mic, color: _isListening ? colorScheme.error : colorScheme.primary, size: 22), onPressed: _listen),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-          ),
-        ),
-    );
-
-    // CORRECTION DE BUG: Seule la barre de recherche principale (isSmall: false) 
-    // doit être le CompositedTransformTarget pour éviter les conflits LayerLink.
-    if (!isSmall) {
-      return CompositedTransformTarget(
-        link: _layerLink,
-        child: searchBarContent,
-      );
-    }
-    
-    return searchBarContent;
-  }
-
-  Widget _buildHistoryAction(String label, int id, Color color) {
-    return InputChip(
-      avatar: Icon(Icons.history, color: color, size: 18),
-      label: Text(label),
-      onPressed: () {
-        _searchController.text = label;
-        _performSearch(label);
+    final searchBar = SearchBarWidget(
+      controller: _searchController,
+      focusNode: currentFocusNode,
+      onChanged: (value) {
+        _fetchSuggestions(value);
+        setState(() {});
       },
-      onDeleted: () => _deleteHistoryItem(id),
-      deleteIcon: const Icon(Icons.close, size: 18),
-      backgroundColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      onSubmitted: _performSearch,
+      onMicPressed: _listen,
+      isSmall: isSmall,
+      isListening: _isListening,
+      showMicButton: true,
     );
+
+
+    return searchBar;
   }
+
 
   Widget _buildSuggestionsList(ColorScheme colorScheme) {
-     return CompositedTransformFollower(
-      link: _layerLink,
-      showWhenUnlinked: false,
-      targetAnchor: Alignment.bottomLeft,
-      followerAnchor: Alignment.topLeft,
-      offset: const Offset(0, 0),
-      child: Container(
-        width: MediaQuery.of(context).size.width - 50,
-        constraints: const BoxConstraints(maxHeight: 250),
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
-          borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(30), bottomRight: Radius.circular(30)),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))],
-          border: Border.all(color: colorScheme.outline),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.xl),
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(maxHeight: 350),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(Spacing.radiusRound),
+              bottomRight: Radius.circular(Spacing.radiusRound),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 16,
+                spreadRadius: 0,
+                offset: const Offset(0, 8),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 8,
+                spreadRadius: 0,
+                offset: const Offset(0, 2),
+              ),
+            ],
+            border: Border(
+              left: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+              right: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+              bottom: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+            ),
+          ),
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(vertical: Spacing.sm),
+            shrinkWrap: true,
+            itemCount: _suggestions.length,
+            itemBuilder: (context, index) => _buildSuggestionTile(
+              _suggestions[index],
+              colorScheme,
+              index == _suggestions.length - 1,
+            ),
+          ),
         ),
-        child: ListView.builder(
-          padding: const EdgeInsets.only(top: 5, bottom: 10),
-          shrinkWrap: true,
-          itemCount: _suggestions.length,
-          itemBuilder: (context, index) => ListTile(
-            dense: true,
-            leading: Icon(Icons.history, size: 20, color: colorScheme.onSurfaceVariant),
-            title: Text(_suggestions[index]),
-            onTap: () {
-              _searchController.text = _suggestions[index];
-              _performSearch(_suggestions[index]);
-            },
+      ),
+    );
+  }
+
+  /// Construit une suggestion élégante avec animation au hover
+  Widget _buildSuggestionTile(
+    String suggestion,
+    ColorScheme colorScheme,
+    bool isLast,
+  ) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          _searchController.text = suggestion;
+          _performSearch(suggestion);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: Spacing.lg,
+            vertical: Spacing.md,
+          ),
+          decoration: BoxDecoration(
+            border: !isLast
+                ? Border(
+                    bottom: BorderSide(
+                      color: colorScheme.outline.withOpacity(0.1),
+                      width: 1,
+                    ),
+                  )
+                : null,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.history,
+                size: 18,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: Spacing.lg),
+              Expanded(
+                child: Text(
+                  suggestion,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w400,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: Spacing.md),
+              Icon(
+                Icons.arrow_outward,
+                size: 16,
+                color: colorScheme.primary.withValues(alpha: 0.6),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 }
+
