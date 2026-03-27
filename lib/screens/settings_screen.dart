@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'login_screen.dart';
 import 'about_screen.dart';
 import '../db_service.dart';
-import '../widgets/custom_app_bar.dart';
-import '../widgets/custom_back_button.dart';
-import '../utils/design_constants.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -79,43 +76,51 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   void _showSelectionDialog(String title, List<String> options, String currentValue, Function(String) onSelected) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: options.map((opt) => RadioListTile<String>(
-            title: Text(opt),
-            value: opt,
-            groupValue: currentValue,
-            onChanged: (val) {
-              if (val != null) {
-                onSelected(val);
-                Navigator.pop(context);
-              }
-            },
-          )).toList(),
-        ),
-      ),
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: options.map((opt) {
+              final isSelected = opt == currentValue;
+              return ListTile(
+                leading: Icon(
+                  isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                  color: isSelected ? Theme.of(dialogContext).colorScheme.primary : null,
+                ),
+                title: Text(opt),
+                onTap: () {
+                  onSelected(opt);
+                  Navigator.pop(dialogContext);
+                },
+              );
+            }).toList(),
+          ),
+        );
+      },
     );
   }
 
   void _clearData() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Effacer les données ?'),
-        content: const Text('Ceci supprimera définitivement votre historique de navigation.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
-          TextButton(
-            onPressed: () async {
-              await _dbService.clearHistory();
-              Navigator.pop(context, true);
-            }, 
-            child: const Text('Effacer', style: TextStyle(color: Colors.red))
-          ),
-        ],
-      ),
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Effacer les données ?'),
+          content: const Text('Ceci supprimera définitivement votre historique de navigation.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Annuler')),
+            TextButton(
+              onPressed: () async {
+                final nav = Navigator.of(dialogContext);
+                await _dbService.clearHistory();
+                nav.pop(true);
+              }, 
+              child: const Text('Effacer', style: TextStyle(color: Colors.red))
+            ),
+          ],
+        );
+      },
     );
     if (confirm == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Historique effacé.')));
@@ -139,7 +144,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: colorScheme.surfaceVariant.withOpacity(0.5),
+      backgroundColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
       appBar: AppBar(
         backgroundColor: colorScheme.surface,
         elevation: 0,
@@ -228,7 +233,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
+        border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.all(15),
@@ -281,7 +286,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
+        border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
       ),
       child: Column(children: childrenWithDividers),
     );
@@ -312,8 +317,8 @@ class CustomBackButton extends StatelessWidget {
       icon: const Icon(Icons.arrow_back_rounded),
       onPressed: onPressed,
       style: IconButton.styleFrom(
-        backgroundColor: colorScheme.surfaceVariant.withOpacity(0.5),
-        side: BorderSide(color: colorScheme.outline.withOpacity(0.5))
+        backgroundColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.5))
       ),
     );
   }

@@ -110,7 +110,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> with SingleTickerProv
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: Spacing.lg, vertical: Spacing.md),
           decoration: BoxDecoration(
-            color: colorScheme.surfaceVariant.withValues(alpha: 0.3),
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
             border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
             borderRadius: BorderRadius.circular(Spacing.radiusRound),
           ),

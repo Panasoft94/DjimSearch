@@ -10,10 +10,6 @@ void main() async {
   // Initialisation des données de localisation pour le formatage des dates
   await initializeDateFormatting('fr_FR', null);
 
-  // Workaround pour le bug Flutter SDK "debugFrameWasSentToEngine"
-  // https://github.com/flutter/flutter/issues/142309
-  // Ce bug est dans le framework lui-même, pas dans le code applicatif.
-  // On intercepte l'erreur en mode debug pour éviter le crash.
   if (kDebugMode) {
     FlutterError.onError = (FlutterErrorDetails details) {
       if (details.exception.toString().contains('debugFrameWasSentToEngine')) {

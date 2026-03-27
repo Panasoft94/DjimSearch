@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,7 +15,6 @@ import 'help_screen.dart';
 import 'downloads_screen.dart';
 import '../db_service.dart';
 import '../widgets/search_bar_widget.dart';
-import '../themes/app_colors.dart';
 import '../utils/design_constants.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -48,6 +48,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   List<String> _suggestions = [];
   bool _canGoBack = false;
   bool _canGoForward = false;
+  bool _hasPageError = false;
 
   // Utilisateur connecté
   Map<String, dynamic>? _currentUser;
@@ -64,6 +65,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // Reconnaissance vocale
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isListening = false;
+
+  // Debounce pour les suggestions (évite flood de requêtes)
+  Timer? _debounceTimer;
+  // Throttle pour _hideGoogleTabs (évite surcharge JS)
+  int _lastHideTabsProgress = 0;
 
   static const String googleSearchUrl = 'https://www.google.com/search?q=';
 
@@ -159,6 +165,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _animController.dispose();
     _focusNode.removeListener(_onFocusChange);
     _focusNode.dispose();
@@ -174,15 +181,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (progress) {
+            if (!mounted) return;
             setState(() {
               _loadingProgress = progress / 100.0;
             });
-            if (progress > 10) _hideGoogleTabs();
+            // Throttle : n'injecter le JS que tous les 20% de progression
+            if (progress > 10 && progress - _lastHideTabsProgress >= 20) {
+              _lastHideTabsProgress = progress;
+              _hideGoogleTabs();
+            }
           },
           onPageFinished: (String url) async {
+            if (!mounted) return;
             _hideGoogleTabs();
+            _lastHideTabsProgress = 0;
 
-            // MODIFIÉ: Logique de sauvegarde conditionnelle
+            // Logique de sauvegarde conditionnelle
             if (_isSearchLoading) {
               if (_activeGroup != null) {
                 final title = await controller.getTitle();
@@ -197,7 +211,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 _loadingProgress = 0;
                 _canGoBack = canGoBack;
                 _canGoForward = canGoForward;
-                _isSearchLoading = false; // Réinitialiser le drapeau
+                _isSearchLoading = false;
+                _hasPageError = false;
               });
             }
           },
@@ -229,9 +244,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               }
 
               setState(() {
-                _showWebView = false;
+                _showWebView = true;
+                _hasPageError = true;
                 _loadingProgress = 0;
-                _isSearchLoading = false; // Réinitialiser aussi en cas d'erreur
+                _isSearchLoading = false;
               });
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text(errorMessage), backgroundColor: Colors.redAccent, behavior: SnackBarBehavior.floating),
@@ -287,25 +303,43 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (!_isListening) {
       var status = await Permission.microphone.request();
       if (status.isGranted) {
-        bool available = await _speech.initialize(onStatus: (val) {
-          if ((val == 'done' || val == 'notListening') && mounted) setState(() => _isListening = false);
-        }, onError: (val) { if (mounted) setState(() => _isListening = false); });
+        bool available = await _speech.initialize(
+          onStatus: (val) {
+            if ((val == 'done' || val == 'notListening') && mounted) {
+              setState(() => _isListening = false);
+            }
+          },
+          onError: (val) {
+            if (mounted) setState(() => _isListening = false);
+          },
+        );
         if (available) {
           if (mounted) setState(() => _isListening = true);
-          _speech.listen(onResult: (val) {
-            if (mounted) {
+          _speech.listen(
+            onResult: (val) {
+              if (!mounted) return;
               setState(() {
                 _searchController.text = val.recognizedWords;
-                if (val.finalResult) {
-                  _isListening = false;
-                  _performSearch(val.recognizedWords);
-                }
               });
-            }
-          });
+              if (val.finalResult && val.recognizedWords.isNotEmpty) {
+                setState(() => _isListening = false);
+                _performSearch(val.recognizedWords);
+              }
+            },
+            listenFor: const Duration(seconds: 30),
+            pauseFor: const Duration(seconds: 5),
+            localeId: 'fr_FR',
+          );
         }
       } else {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Accès au micro refusé")));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Accès au microphone refusé"),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       }
     } else {
       if (mounted) setState(() => _isListening = false);
@@ -314,40 +348,72 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _fetchSuggestions(String query) async {
-    if (query.isEmpty) {
-      setState(() => _suggestions = []);
+    // Annuler la requête précédente en cours
+    _debounceTimer?.cancel();
+
+    if (query.isEmpty || query.trim().length < 2) {
+      if (mounted) setState(() => _suggestions = []);
       return;
     }
-    try {
-      final response = await http.get(Uri.parse('https://suggestqueries.google.com/complete/search?client=chrome&q=$query'));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() => _suggestions = List<String>.from(data[1]));
+
+    // Attendre 350ms avant d'envoyer la requête (debounce)
+    _debounceTimer = Timer(const Duration(milliseconds: 350), () async {
+      if (!mounted) return;
+      try {
+        final response = await http
+            .get(
+              Uri.parse(
+                'https://suggestqueries.google.com/complete/search?client=chrome&hl=fr&q=${Uri.encodeComponent(query.trim())}',
+              ),
+            )
+            .timeout(const Duration(seconds: 5));
+
+        if (response.statusCode == 200 && mounted) {
+          final data = json.decode(utf8.decode(response.bodyBytes));
+          if (mounted) {
+            setState(() => _suggestions = List<String>.from(data[1]).take(7).toList());
+          }
+        }
+      } on TimeoutException {
+        // Suggestions non disponibles — ignorer silencieusement
+      } catch (_) {
+        // Toute autre erreur réseau — ignorer silencieusement
       }
-    } catch (e) {}
+    });
   }
 
   void _performSearch(String query) {
-    if (query.isNotEmpty) {
-      final searchUrl = query.startsWith('http://') || query.startsWith('https://') || query.startsWith('file://') ? query : '$googleSearchUrl${Uri.encodeComponent(query)}';
-      controller.loadRequest(Uri.parse(searchUrl));
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return;
 
-      // MODIFIÉ: Ajout conditionnel à l'historique
-      if (_activeGroup == null) {
-        _dbService.addHistory(query);
-        _loadHistory();
-      }
+    // Annuler tout debounce en cours
+    _debounceTimer?.cancel();
 
-      setState(() {
-        _showWebView = true;
-        _isSearchLoading = true; // Indiquer qu'une recherche démarre
-        _suggestions = [];
-        _canGoBack = false;
-        _canGoForward = false;
-      });
-      _focusNode.unfocus();
-      _appBarFocusNode.unfocus();
+    final searchUrl = trimmed.startsWith('http://') ||
+            trimmed.startsWith('https://') ||
+            trimmed.startsWith('file://')
+        ? trimmed
+        : '$googleSearchUrl${Uri.encodeComponent(trimmed)}';
+
+    controller.loadRequest(Uri.parse(searchUrl));
+
+    // Ajout conditionnel à l'historique
+    if (_activeGroup == null) {
+      _dbService.addHistory(trimmed);
+      _loadHistory();
     }
+
+    setState(() {
+      _showWebView = true;
+      _isSearchLoading = true;
+      _hasPageError = false;
+      _suggestions = [];
+      _canGoBack = false;
+      _canGoForward = false;
+      _lastHideTabsProgress = 0;
+    });
+    _focusNode.unfocus();
+    _appBarFocusNode.unfocus();
   }
 
   Future<void> _deleteHistoryItem(int id) async {
@@ -368,17 +434,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   void _showNewGroupDialog() {
     final TextEditingController groupNameController = TextEditingController();
-    showDialog(context: context, builder: (context) => AlertDialog(
+    showDialog(context: context, builder: (dialogContext) => AlertDialog(
       title: const Text('Nouveau Groupe d\'Onglets'),
       content: TextField(controller: groupNameController, decoration: const InputDecoration(hintText: 'Nom du groupe', border: OutlineInputBorder())),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('ANNULER')),
+        TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('ANNULER')),
         TextButton(onPressed: () async {
           final name = groupNameController.text.isNotEmpty ? groupNameController.text : 'Groupe sans nom';
+          final nav = Navigator.of(dialogContext);
+          final messenger = ScaffoldMessenger.of(context);
           await _dbService.addTabGroup(name);
           if (!mounted) return;
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Groupe "$name" créé avec succès.')));
+          nav.pop();
+          messenger.showSnackBar(SnackBar(content: Text('Groupe "$name" créé avec succès.')));
         }, child: const Text('CRÉER')),
       ],
     ));
@@ -397,16 +465,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final bool canGoBackInWeb = _showWebView && _canGoBack;
     final bool canGoForwardInWeb = _showWebView && _canGoForward;
     final backButtonEnabled = canGoBackInWeb || canPop;
-    final backButtonColor = backButtonEnabled ? colorScheme.onSurface : colorScheme.onSurface.withOpacity(0.38);
-    final forwardButtonColor = canGoForwardInWeb ? colorScheme.onSurface : colorScheme.onSurface.withOpacity(0.38);
+    final backButtonColor = backButtonEnabled ? colorScheme.onSurface : colorScheme.onSurface.withValues(alpha: 0.38);
+    final forwardButtonColor = canGoForwardInWeb ? colorScheme.onSurface : colorScheme.onSurface.withValues(alpha: 0.38);
 
     // Helper pour construire les boutons de navigation (précédent/suivant)
-    Widget _buildLeadingButtons() {
+    Widget buildLeadingButtons() {
       return Padding(
         padding: const EdgeInsets.only(top: 15.0),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           const SizedBox(width: 4),
-          _buildNavButton(Icons.arrow_back_rounded, backButtonColor, backButtonEnabled ? () { if (canGoBackInWeb) controller.goBack(); else Navigator.pop(context); } : null, 'Retour'),
+          _buildNavButton(Icons.arrow_back_rounded, backButtonColor, backButtonEnabled ? () {
+            if (canGoBackInWeb) {
+              controller.goBack();
+            } else {
+              Navigator.pop(context);
+            }
+          } : null, 'Retour'),
           const SizedBox(width: 4),
           _buildNavButton(Icons.arrow_forward_rounded, forwardButtonColor, canGoForwardInWeb ? () => controller.goForward() : null, 'Suivant'),
         ]),
@@ -414,12 +488,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
     
     // Helper pour la barre de recherche en mode petit
-    Widget _buildTitleContent() {
+    Widget buildTitleContent() {
       return Padding(padding: const EdgeInsets.only(top: 15.0), child: _buildSearchBar(isSmall: true));
     }
     
     // Helper pour les actions/menu
-    List<Widget> _buildActionsContent() {
+    List<Widget> buildActionsContent() {
       return [Padding(padding: const EdgeInsets.only(top: 15.0, right: 5), child: _buildMainMenu())];
     }
 
@@ -441,22 +515,37 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           leadingWidth: 90,
 
           // Contenu de l'AppBar
-          leading: _buildLeadingButtons(),
-          title: _buildTitleContent(),
-          actions: _buildActionsContent(),
+          leading: buildLeadingButtons(),
+          title: buildTitleContent(),
+          actions: buildActionsContent(),
 
           // Barre de progression/Groupe actif
           bottom: _buildAppBarBottom(colorScheme),
         ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => controller.reload(),
-          backgroundColor: colorScheme.primary,
-          foregroundColor: colorScheme.onPrimary,
-          elevation: 4,
-          child: const Icon(Icons.refresh),
+        floatingActionButton: (_hasPageError || _loadingProgress > 0)
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                setState(() {
+                  _hasPageError = false;
+                  _loadingProgress = 0;
+                });
+                controller.reload();
+              },
+              backgroundColor: _hasPageError ? colorScheme.error : colorScheme.primary,
+              foregroundColor: _hasPageError ? colorScheme.onError : colorScheme.onPrimary,
+              icon: Icon(_hasPageError ? Icons.refresh_rounded : Icons.hourglass_top_rounded),
+              label: Text(_hasPageError ? 'Recharger' : 'Chargement...'),
+              elevation: 4,
+            )
+          : null,
+        // Le corps principal est le WebView avec un espace en bas pour éviter que le contenu soit coupé.
+        body: Column(
+          children: [
+            Expanded(child: WebViewWidget(controller: controller)),
+            // Espace en bas pour ne pas que le dernier résultat soit coincé
+            SizedBox(height: (_hasPageError || _loadingProgress > 0) ? 72 : 16),
+          ],
         ),
-        // Le corps principal est le WebView, qui gère son propre défilement.
-        body: WebViewWidget(controller: controller),
       );
     } else {
       // Structure pour l'écran d'accueil standard (AppBar fixe)
@@ -472,9 +561,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           titleSpacing: 0,
           leadingWidth: 90,
           
-          leading: _buildLeadingButtons(),
-          title: _buildTitleContent(),
-          actions: _buildActionsContent(),
+          leading: buildLeadingButtons(),
+          title: buildTitleContent(),
+          actions: buildActionsContent(),
           
           // La bottom bar est présente uniquement pour le groupe actif sur la page de résultats
           bottom: _buildAppBarBottom(colorScheme),
@@ -521,45 +610,47 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           case 'new_group': _showNewGroupDialog(); break;
           case 'manage_groups':
             final result = await Navigator.push(context, _slideTransition(const TabGroupsScreen()));
+            if (!mounted) return;
             if (result != null) {
               if (result is Map<String, dynamic>) {
-                // Cas 1: Un groupe a été sélectionné pour devenir le groupe actif
-                _setActiveGroup(result); // UTILISE LA NOUVELLE MÉTHODE
+                _setActiveGroup(result);
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Groupe "${result['group_name']}" activé.')));
               } else if (result is String) {
-                // Cas 2: Une URL a été retournée (clic sur un onglet dans GroupDetails)
                 _searchController.text = result;
                 _performSearch(result);
               }
             }
             break;
-          // NOUVEAU: Action pour retirer le groupe actif
           case 'clear_group':
-            _setActiveGroup(null); // UTILISE LA NOUVELLE MÉTHODE
+            _setActiveGroup(null);
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Groupe actif retiré.')));
             break;
           case 'history':
             final selectedQuery = await Navigator.push(context, _slideTransition(const HistoryScreen()));
+            if (!mounted) return;
             if (selectedQuery != null && selectedQuery is String) {
               _searchController.text = selectedQuery;
               _performSearch(selectedQuery);
             }
             break;
           case 'downloads': 
-            Navigator.push(context, _slideTransition(const DownloadsScreen())); // MODIFIÉ: Navigation vers DownloadsScreen
+            Navigator.push(context, _slideTransition(const DownloadsScreen()));
             break;
           case 'settings': Navigator.push(context, _slideTransition(const SettingsScreen())); break;
-          case 'help': _showHelpOptions(); break; // APPEL À LA LOGIQUE MISE À JOUR
+          case 'help': _showHelpOptions(); break;
           case 'about': Navigator.push(context, _slideTransition(const AboutScreen())); break;
           case 'sync':
              if (_currentUser == null) {
                 final user = await Navigator.push(context, _slideTransition(const LoginScreen()));
+                if (!mounted) return;
                 if (user != null && user is Map<String, dynamic>) {
                   await _dbService.saveSession(user['users_id']);
+                  if (!mounted) return;
                   setState(() => _currentUser = user);
                 }
               } else {
                 await _dbService.clearSession();
+                if (!mounted) return;
                 setState(() => _currentUser = null);
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vous avez été déconnecté.')));
               }
@@ -610,7 +701,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           if (hasActiveGroup)
             Container(
               height: 32,
-              color: colorScheme.primary.withOpacity(0.1),
+              color: colorScheme.primary.withValues(alpha: 0.1),
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: Row(children: [
                 Icon(Icons.folder_open_rounded, size: 16, color: colorScheme.primary),
@@ -633,7 +724,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         icon: Icon(icon, color: color, size: 24),
         onPressed: onPressed,
         tooltip: tooltip,
-        style: IconButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.surface, side: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.5))),
+        style: IconButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.surface, side: BorderSide(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5))),
       ),
     );
   }
@@ -768,22 +859,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
           ),
 
-          const SizedBox(height: Spacing.xxxl), // Remplace Spacer(flex: 3)
-
-          // Copyright
-          FadeTransition(
-            opacity: _actionsFade,
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: Spacing.lg),
-              child: Text(
-                '© 2024 Panasoft Corporation',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ),
-          ),
+          const SizedBox(height: Spacing.xxxl),
           const SizedBox(height: Spacing.lg),
         ],
       ),
@@ -843,7 +919,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             vertical: Spacing.md,
           ),
           decoration: BoxDecoration(
-            color: colorScheme.surfaceVariant.withValues(alpha: 0.6),
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
             border: Border.all(
               color: colorScheme.outline.withValues(alpha: 0.2),
               width: 1,
@@ -977,7 +1053,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             border: !isLast
                 ? Border(
                     bottom: BorderSide(
-                      color: colorScheme.outline.withOpacity(0.1),
+                      color: colorScheme.outline.withValues(alpha: 0.1),
                       width: 1,
                     ),
                   )
@@ -1015,4 +1091,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 }
+
+
 

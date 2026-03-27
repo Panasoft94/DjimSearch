@@ -111,7 +111,7 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
         borderRadius: BorderRadius.circular(Spacing.radiusRound),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: Spacing.lg, vertical: Spacing.lg),
-          decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceVariant.withValues(alpha: 0.4), border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1)), borderRadius: BorderRadius.circular(Spacing.radiusRound)),
+          decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4), border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1)), borderRadius: BorderRadius.circular(Spacing.radiusRound)),
           child: Row(
             children: [
               Container(padding: const EdgeInsets.all(Spacing.md), decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(Spacing.radiusMedium)), child: Icon(icon, color: color, size: 24)),

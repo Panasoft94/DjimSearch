@@ -238,7 +238,7 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
               theme,
               isLast: itemIndex == items.length - 1,
             );
-          }).toList(),
+          }),
         ],
       ),
     );
@@ -268,7 +268,7 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
               vertical: Spacing.md,
             ),
             decoration: BoxDecoration(
-              color: colorScheme.surfaceVariant.withValues(alpha: 0.4),
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
               border: Border.all(
                 color: colorScheme.outline.withValues(alpha: 0.1),
                 width: 1,

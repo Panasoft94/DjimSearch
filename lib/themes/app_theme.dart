@@ -24,7 +24,7 @@ class AppTheme {
     onErrorContainer: AppColors.error,
     surface: AppColors.surface,
     onSurface: AppColors.textPrimary,
-    surfaceVariant: AppColors.surfaceVariant,
+    surfaceContainerHighest: AppColors.surfaceVariant,
     onSurfaceVariant: AppColors.textSecondary,
     outline: AppColors.outline,
     outlineVariant: AppColors.outlineVariant,

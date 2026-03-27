@@ -82,21 +82,21 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) {
+      builder: (sheetContext) {
         return Padding(
-          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(sheetContext).viewInsets.bottom + 24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Nouveau Groupe',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(sheetContext).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Text(
                 'Créez un nouvel espace pour organiser vos onglets.',
-                 style: Theme.of(context).textTheme.bodyMedium,
+                 style: Theme.of(sheetContext).textTheme.bodyMedium,
               ),
               const SizedBox(height: 24),
               TextField(
@@ -110,12 +110,11 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
                   ),
                 ),
                 onSubmitted: (value) async {
-                   final name = value.isNotEmpty ? value : 'Groupe sans nom';
+                  final name = value.isNotEmpty ? value : 'Groupe sans nom';
+                  final nav = Navigator.of(sheetContext);
                   await _dbService.addTabGroup(name);
-                  if (mounted) {
-                    Navigator.pop(context);
-                    _loadGroups();
-                  }
+                  nav.pop();
+                  _loadGroups();
                 },
               ),
               const SizedBox(height: 24),
@@ -123,7 +122,7 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.pop(sheetContext),
                     child: const Text('Annuler'),
                   ),
                   const SizedBox(width: 12),
@@ -133,11 +132,10 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
                       final name = groupNameController.text.isNotEmpty
                           ? groupNameController.text
                           : 'Groupe sans nom';
+                      final nav = Navigator.of(sheetContext);
                       await _dbService.addTabGroup(name);
-                      if (mounted) {
-                        Navigator.pop(context);
-                        _loadGroups();
-                      }
+                      nav.pop();
+                      _loadGroups();
                     },
                     label: const Text('Créer le groupe'),
                   ),
@@ -218,7 +216,7 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
                       Container(
                         padding: const EdgeInsets.all(32),
                         decoration: BoxDecoration(
-                          color: colorScheme.primaryContainer.withOpacity(0.3),
+                           color: colorScheme.primaryContainer.withValues(alpha: 0.3),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
@@ -289,7 +287,7 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(color: colorScheme.outlineVariant),
                             ),
-                            color: colorScheme.surfaceVariant.withOpacity(0.3),
+                            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
                             child: InkWell(
                               borderRadius: BorderRadius.circular(20),
                               // Sélectionne le groupe actif
@@ -301,7 +299,7 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
                                     Container(
                                       padding: const EdgeInsets.all(12),
                                       decoration: BoxDecoration(
-                                        color: colorScheme.primary.withOpacity(0.1),
+                                        color: colorScheme.primary.withValues(alpha: 0.1),
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Icon(Icons.folder_rounded, color: colorScheme.primary),
@@ -332,18 +330,17 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
                                     IconButton(
                                       icon: Icon(Icons.info_outline_rounded, size: 20, color: colorScheme.onSurfaceVariant),
                                       onPressed: () async {
-                                        final result = await Navigator.push(
-                                          context,
-                                          _slideTransition(GroupDetailsScreen(group: group)), // MODIFIÉ: Utilisation de _slideTransition
+                                        final nav = Navigator.of(context);
+                                        final result = await nav.push(
+                                          _slideTransition(GroupDetailsScreen(group: group)),
                                         );
-                                        // Si le groupe a été supprimé depuis l'écran de détails, recharger la liste
+                                        if (!mounted) return;
                                         if (result == true) {
                                           _loadGroups();
                                         } else if (result is String) {
-                                          // Si une URL a été retournée (ouverture d'un onglet), retourner à l'écran d'accueil
-                                          if (mounted) Navigator.pop(context, result);
+                                          nav.pop(result);
                                         } else {
-                                          _loadGroups(); // Simple actualisation
+                                          _loadGroups();
                                         }
                                       },
                                       tooltip: 'Détails du groupe',

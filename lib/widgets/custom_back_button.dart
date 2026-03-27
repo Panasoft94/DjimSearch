@@ -31,7 +31,7 @@ class CustomBackButton extends StatelessWidget {
         onPressed: onPressed ?? () => Navigator.pop(context),
         style: IconButton.styleFrom(
           backgroundColor: colorScheme.surface,
-          side: BorderSide(color: colorScheme.outline.withOpacity(0.3)),
+          side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.3)),
         ),
       ),
     );

@@ -63,7 +63,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       pageBuilder: (_, __, ___) => page,
       transitionsBuilder: (_, animation, __, child) {
         return SlideTransition(
-          position: Tween(begin: const Offset(1, 0), end: Offset.zero).animate(animation),
+          position: Tween(begin: const Offset(1, 0), end: Offset.zero).animate(
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+          ),
           child: child,
         );
       },
@@ -75,7 +77,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       setState(() => _isLoading = true);
 
       final user = await _dbService.authenticateUser(
-        _emailController.text,
+        _emailController.text.trim(),
         _passwordController.text,
       );
 
@@ -85,18 +87,34 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         if (user != null) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Connexion réussie: Bienvenue ${user['users_prenom']} !'),
-              backgroundColor: Colors.green,
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text('Bienvenue ${user['users_prenom']} ! 👋')),
+                ],
+              ),
+              backgroundColor: Colors.green.shade600,
               behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              margin: const EdgeInsets.all(16),
             ),
           );
           Navigator.pop(context, user);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Erreur: Email ou mot de passe incorrect.'),
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.error_outline_rounded, color: Colors.white, size: 20),
+                  SizedBox(width: 12),
+                  Expanded(child: Text('Email ou mot de passe incorrect.')),
+                ],
+              ),
               backgroundColor: Colors.redAccent,
               behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              margin: const EdgeInsets.all(16),
             ),
           );
         }
@@ -105,12 +123,81 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 
   void _resetDatabase() async {
-    await _dbService.resetDB();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Base de données réinitialisée. Vous pouvez créer un nouveau compte.')),
-      );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: Icon(Icons.warning_amber_rounded, color: Theme.of(context).colorScheme.error, size: 48),
+        title: const Text('Réinitialiser ?'),
+        content: const Text(
+          'Toutes les données seront supprimées. Cette action est irréversible.',
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('ANNULER'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            child: const Text('RÉINITIALISER'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _dbService.resetDB();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Base de données réinitialisée.'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
     }
+  }
+
+  InputDecoration _buildInputDecoration({
+    required String hintText,
+    required IconData prefixIcon,
+    Widget? suffixIcon,
+    required ColorScheme colorScheme,
+  }) {
+    return InputDecoration(
+      hintText: hintText,
+      hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+      prefixIcon: Icon(prefixIcon, color: colorScheme.primary),
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.15)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: colorScheme.primary, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: colorScheme.error),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: colorScheme.error, width: 2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+    );
   }
 
   @override
@@ -120,237 +207,235 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: CustomBackButton(onPressed: () => Navigator.pop(context)),
-      ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: Spacing.xl),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const SizedBox(height: Spacing.xxxl),
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverAppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              pinned: false,
+              leading: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: CustomBackButton(onPressed: () => Navigator.pop(context)),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const SizedBox(height: Spacing.xl),
 
-              // Logo avec animation
-              FadeTransition(
-                opacity: _logoFade,
-                child: SlideTransition(
-                  position: _logoSlide,
-                  child: Column(
-                    children: [
-                      Image.asset(
-                        'assets/img/logo.png',
-                        height: 80,
-                        width: 80,
-                        fit: BoxFit.contain,
+                    // Logo et titre
+                    FadeTransition(
+                      opacity: _logoFade,
+                      child: SlideTransition(
+                        position: _logoSlide,
+                        child: Column(
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: colorScheme.primary.withValues(alpha: 0.15),
+                                    blurRadius: 30,
+                                    spreadRadius: 5,
+                                  ),
+                                ],
+                              ),
+                              child: Image.asset(
+                                'assets/img/logo.png',
+                                height: 80,
+                                width: 80,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                            const SizedBox(height: Spacing.xl),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text('Djim', style: theme.textTheme.displaySmall?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+                                Text('Search', style: theme.textTheme.displaySmall?.copyWith(color: colorScheme.error, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+                              ],
+                            ),
+                            const SizedBox(height: Spacing.md),
+                            Text(
+                              'Connectez-vous pour synchroniser',
+                              style: theme.textTheme.bodyLarge?.copyWith(color: colorScheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: Spacing.lg),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Djim',
-                            style: theme.textTheme.displayMedium?.copyWith(
-                              color: colorScheme.primary,
-                              fontWeight: FontWeight.w700,
+                    ),
+
+                    const SizedBox(height: Spacing.xxxl + 8),
+
+                    // Formulaire dans une Card stylisée
+                    FadeTransition(
+                      opacity: _formFade,
+                      child: SlideTransition(
+                        position: _formSlide,
+                        child: Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
+                          ),
+                          child: Form(
+                            key: _formKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.login_rounded, color: colorScheme.primary, size: 20),
+                                    const SizedBox(width: 8),
+                                    Text('Identifiants', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                                  ],
+                                ),
+                                const SizedBox(height: 20),
+
+                                TextFormField(
+                                  controller: _emailController,
+                                  keyboardType: TextInputType.emailAddress,
+                                  textInputAction: TextInputAction.next,
+                                  decoration: _buildInputDecoration(
+                                    hintText: 'votre.email@exemple.com',
+                                    prefixIcon: Icons.email_outlined,
+                                    colorScheme: colorScheme,
+                                  ),
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) return 'L\'email est requis';
+                                    if (!value.contains('@') || !value.contains('.')) return 'Email invalide';
+                                    return null;
+                                  },
+                                ),
+
+                                const SizedBox(height: 16),
+
+                                TextFormField(
+                                  controller: _passwordController,
+                                  obscureText: _obscureText,
+                                  textInputAction: TextInputAction.done,
+                                  onFieldSubmitted: (_) => _login(),
+                                  decoration: _buildInputDecoration(
+                                    hintText: 'Votre mot de passe',
+                                    prefixIcon: Icons.lock_outline_rounded,
+                                    colorScheme: colorScheme,
+                                    suffixIcon: IconButton(
+                                      icon: Icon(
+                                        _obscureText ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                      onPressed: () => setState(() => _obscureText = !_obscureText),
+                                    ),
+                                  ),
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) return 'Le mot de passe est requis';
+                                    if (value.length < 6) return 'Au moins 6 caractères';
+                                    return null;
+                                  },
+                                ),
+                              ],
                             ),
                           ),
-                          Text(
-                            'Search',
-                            style: theme.textTheme.displayMedium?.copyWith(
-                              color: colorScheme.error,
-                              fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 32),
+
+                    // Boutons
+                    FadeTransition(
+                      opacity: _buttonFade,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(
+                            height: 56,
+                            child: FilledButton(
+                              onPressed: _isLoading ? null : _login,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: colorScheme.primary,
+                                disabledBackgroundColor: colorScheme.primary.withValues(alpha: 0.5),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                elevation: 2,
+                              ),
+                              child: _isLoading
+                                  ? SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: colorScheme.onPrimary, strokeWidth: 2.5))
+                                  : Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.login_rounded, color: colorScheme.onPrimary, size: 20),
+                                        const SizedBox(width: 10),
+                                        Text('Se connecter', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: colorScheme.onPrimary)),
+                                      ],
+                                    ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          // Séparateur
+                          Row(
+                            children: [
+                              Expanded(child: Divider(color: colorScheme.outline.withValues(alpha: 0.2))),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                child: Text('OU', style: theme.textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant, fontWeight: FontWeight.w500)),
+                              ),
+                              Expanded(child: Divider(color: colorScheme.outline.withValues(alpha: 0.2))),
+                            ],
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          SizedBox(
+                            height: 56,
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.push(context, _slideTransition(const CreateAccountScreen())),
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(color: colorScheme.primary, width: 1.5),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.person_add_outlined, color: colorScheme.primary, size: 20),
+                                  const SizedBox(width: 10),
+                                  Text('Créer un compte', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: colorScheme.primary)),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 24),
+
+                          Center(
+                            child: TextButton.icon(
+                              onPressed: _resetDatabase,
+                              icon: Icon(Icons.restart_alt_rounded, size: 16, color: colorScheme.error.withValues(alpha: 0.7)),
+                              label: Text(
+                                'Réinitialiser la base de données',
+                                style: theme.textTheme.labelMedium?.copyWith(color: colorScheme.error.withValues(alpha: 0.7)),
+                              ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: Spacing.sm),
-                      Text(
-                        'Connectez-vous pour continuer',
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: Spacing.xxxl),
-
-              // Formulaire avec animation
-              FadeTransition(
-                opacity: _formFade,
-                child: SlideTransition(
-                  position: _formSlide,
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Email
-                        Text(
-                          'Email',
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: colorScheme.onSurface,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: Spacing.sm),
-                        TextFormField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: InputDecoration(
-                            hintText: 'votre.email@exemple.com',
-                            prefixIcon: Icon(Icons.email_rounded, color: colorScheme.primary),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(Spacing.radiusRound),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(Spacing.radiusRound),
-                              borderSide: BorderSide(
-                                color: colorScheme.outline.withValues(alpha: 0.3),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(Spacing.radiusRound),
-                              borderSide: BorderSide(
-                                color: colorScheme.primary,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'L\'email est requis';
-                            }
-                            if (!value.contains('@')) {
-                              return 'Email invalide';
-                            }
-                            return null;
-                          },
-                        ),
-
-                        const SizedBox(height: Spacing.xl),
-
-                        // Mot de passe
-                        Text(
-                          'Mot de passe',
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: colorScheme.onSurface,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: Spacing.sm),
-                        TextFormField(
-                          controller: _passwordController,
-                          obscureText: _obscureText,
-                          decoration: InputDecoration(
-                            hintText: 'Votre mot de passe',
-                            prefixIcon: Icon(Icons.lock_rounded, color: colorScheme.primary),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscureText ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                                color: colorScheme.primary,
-                              ),
-                              onPressed: () => setState(() => _obscureText = !_obscureText),
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(Spacing.radiusRound),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(Spacing.radiusRound),
-                              borderSide: BorderSide(
-                                color: colorScheme.outline.withValues(alpha: 0.3),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(Spacing.radiusRound),
-                              borderSide: BorderSide(
-                                color: colorScheme.primary,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Le mot de passe est requis';
-                            }
-                            if (value.length < 6) {
-                              return 'Au moins 6 caractères';
-                            }
-                            return null;
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: Spacing.xxxl),
-
-              // Boutons avec animation
-              FadeTransition(
-                opacity: _buttonFade,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Bouton connexion
-                    FilledButton(
-                      onPressed: _isLoading ? null : _login,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: Spacing.lg),
-                        backgroundColor: colorScheme.primary,
-                        disabledBackgroundColor: colorScheme.primary.withValues(alpha: 0.5),
-                      ),
-                      child: _isLoading
-                        ? SizedBox(
-                            height: 24,
-                            width: 24,
-                            child: CircularProgressIndicator(
-                              color: colorScheme.onPrimary,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text('Se connecter'),
                     ),
 
-                    const SizedBox(height: Spacing.lg),
-
-                    // Bouton créer compte
-                    OutlinedButton(
-                      onPressed: () {
-                        Navigator.push(context, _slideTransition(const CreateAccountScreen()));
-                      },
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: Spacing.lg),
-                        side: BorderSide(color: colorScheme.primary, width: 2),
-                      ),
-                      child: const Text('Créer un compte'),
-                    ),
-
-                    const SizedBox(height: Spacing.lg),
-
-                    // Bouton réinitialiser BD
-                    TextButton(
-                      onPressed: _resetDatabase,
-                      child: Text(
-                        'Réinitialiser la base de données',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: colorScheme.error,
-                        ),
-                      ),
-                    ),
+                    const SizedBox(height: Spacing.xxxl),
                   ],
                 ),
               ),
-
-              const SizedBox(height: Spacing.xxxl),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

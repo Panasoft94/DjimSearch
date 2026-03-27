@@ -15,7 +15,7 @@ class SearchBarWidget extends StatefulWidget {
   final bool showMicButton;
 
   const SearchBarWidget({
-    Key? key,
+    super.key,
     required this.controller,
     required this.focusNode,
     required this.onChanged,
@@ -25,7 +25,7 @@ class SearchBarWidget extends StatefulWidget {
     this.isListening = false,
     this.hintText = 'Rechercher ou saisir une URL',
     this.showMicButton = true,
-  }) : super(key: key);
+  });
 
   @override
   State<SearchBarWidget> createState() => _SearchBarWidgetState();
@@ -98,7 +98,7 @@ class _SearchBarWidgetState extends State<SearchBarWidget>
               ),
               boxShadow: [
                 BoxShadow(
-                  color: colorScheme.primary.withOpacity(0.12),
+                  color: colorScheme.primary.withValues(alpha: 0.12),
                   blurRadius: _shadowAnimation.value,
                   spreadRadius: _shadowAnimation.value * 0.5,
                   offset: Offset(0, _shadowAnimation.value * 0.25),
@@ -111,11 +111,11 @@ class _SearchBarWidgetState extends State<SearchBarWidget>
                 borderRadius: BorderRadius.circular(Spacing.radiusRound),
                 color: isFocused
                     ? colorScheme.surface
-                    : colorScheme.surfaceVariant.withOpacity(0.6),
+                    : colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
                 border: Border.all(
                   color: isFocused
                       ? colorScheme.primary
-                      : colorScheme.outline.withOpacity(0.2),
+                      : colorScheme.outline.withValues(alpha: 0.2),
                   width: isFocused ? 2 : 1.5,
                 ),
               ),
@@ -188,14 +188,14 @@ class AnimatedIconButton extends StatefulWidget {
   final bool isActive;
 
   const AnimatedIconButton({
-    Key? key,
+    super.key,
     required this.icon,
     required this.color,
     this.activeColor,
     this.size = 24,
     this.onPressed,
     this.isActive = false,
-  }) : super(key: key);
+  });
 
   @override
   State<AnimatedIconButton> createState() => _AnimatedIconButtonState();
@@ -262,11 +262,11 @@ class MicrophoneButton extends StatefulWidget {
   final bool isSmall;
 
   const MicrophoneButton({
-    Key? key,
+    super.key,
     this.onPressed,
     this.isListening = false,
     this.isSmall = false,
-  }) : super(key: key);
+  });
 
   @override
   State<MicrophoneButton> createState() => _MicrophoneButtonState();

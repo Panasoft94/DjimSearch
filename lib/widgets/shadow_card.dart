@@ -13,7 +13,7 @@ class ShadowCard extends StatefulWidget {
   final bool clickable;
 
   const ShadowCard({
-    Key? key,
+    super.key,
     required this.child,
     this.onTap,
     this.padding = const EdgeInsets.all(Spacing.lg),
@@ -22,7 +22,7 @@ class ShadowCard extends StatefulWidget {
     this.borderRadius = Spacing.radiusLarge,
     this.backgroundColor,
     this.clickable = true,
-  }) : super(key: key);
+  });
 
   @override
   State<ShadowCard> createState() => _ShadowCardState();
@@ -69,7 +69,7 @@ class _ShadowCardState extends State<ShadowCard>
               borderRadius: BorderRadius.circular(widget.borderRadius),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
+                  color: Colors.black.withValues(alpha: 0.06),
                   blurRadius: widget.elevation * 4,
                   spreadRadius: widget.elevation * 0.5,
                   offset: Offset(0, widget.elevation),

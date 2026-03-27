@@ -12,7 +12,7 @@ class SettingsTile extends StatelessWidget {
   final bool isDestructive;
 
   const SettingsTile({
-    Key? key,
+    super.key,
     required this.title,
     this.subtitle,
     required this.icon,
@@ -20,7 +20,7 @@ class SettingsTile extends StatelessWidget {
     this.trailing,
     this.iconColor,
     this.isDestructive = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -42,8 +42,8 @@ class SettingsTile extends StatelessWidget {
                 padding: const EdgeInsets.all(Spacing.md),
                 decoration: BoxDecoration(
                   color: isDestructive
-                      ? colorScheme.error.withOpacity(0.1)
-                      : colorScheme.primary.withOpacity(0.1),
+                      ? colorScheme.error.withValues(alpha: 0.1)
+                      : colorScheme.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(Spacing.radiusMedium),
                 ),
                 child: Icon(
@@ -102,14 +102,14 @@ class SettingsSection extends StatelessWidget {
   final EdgeInsetsGeometry padding;
 
   const SettingsSection({
-    Key? key,
+    super.key,
     required this.title,
     required this.children,
     this.padding = const EdgeInsets.only(
       top: Spacing.xl,
       bottom: Spacing.lg,
     ),
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -138,7 +138,7 @@ class SettingsSection extends StatelessWidget {
             color: colorScheme.surface,
             borderRadius: BorderRadius.circular(Spacing.radiusLarge),
             border: Border.all(
-              color: colorScheme.outline.withOpacity(0.2),
+              color: colorScheme.outline.withValues(alpha: 0.2),
               width: 1,
             ),
           ),
@@ -151,7 +151,7 @@ class SettingsSection extends StatelessWidget {
                   if (index < children.length - 1)
                     Divider(
                       height: 1,
-                      color: colorScheme.outline.withOpacity(0.1),
+                      color: colorScheme.outline.withValues(alpha: 0.1),
                       indent: 0,
                       endIndent: 0,
                     ),
