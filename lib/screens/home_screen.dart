@@ -262,38 +262,149 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     const String jsCode = """
       (function() {
         if (window.location.hostname.indexOf('google') === -1) return;
-        var styleId = 'djimsearch-custom-style';
-        function injectStyle() {
-          var style = document.createElement('style');
-          style.id = styleId;
-          style.type = 'text/css';
-          document.head.appendChild(style);
-          style.innerHTML = `
-            header, #header, #searchform, .sfbg, #top_nav, .fbar, .gb_1, 
-            div[role="navigation"], nav, footer { display: none !important; }
-            #main, #rcnt, #cnt, body { margin-top: 0 !important; top: 0 !important; }
-          `;
+
+        /* ===== COUCHE 1 : CSS STRUCTUREL (ne dépend pas des noms de classes) ===== */
+        var styleId = 'djim-nuke';
+        var css = `
+          /* Google classique : header, nav, footer */
+          header, #header, #searchform, .sfbg, #top_nav, .fbar, .gb_1,
+          div[role="navigation"], nav, footer,
+          div[role="banner"] { display:none!important; height:0!important; }
+          #main, #rcnt, #cnt, body { margin-top:0!important; top:0!important; }
+
+          /* Lignes / séparateurs */
+          .ULSxyf>hr, .kp-blk hr, .mod hr, div[data-attrid]>hr,
+          .XqFnDf, .LGOjhe, .wDYxhc hr { display:none!important; border:none!important; }
+          .kp-blk,.mod,.wDYxhc,.ULSxyf { border-bottom:none!important; box-shadow:none!important; }
+
+          /* Padding compensation */
+          body>div[style*="padding-top"], #search>div[style*="padding-top"],
+          #rso>div[style*="padding-top"] { padding-top:0!important; }
+
+          /* Marqueur pour les éléments tués par JS */
+          [data-djim-killed] {
+            display:none!important; height:0!important; max-height:0!important;
+            min-height:0!important; padding:0!important; margin:0!important;
+            overflow:hidden!important; visibility:hidden!important;
+            pointer-events:none!important; opacity:0!important;
+            position:absolute!important; top:-9999px!important;
+          }
+        `;
+        function ensureStyle() {
+          var s = document.getElementById(styleId);
+          if (!s) { s=document.createElement('style'); s.id=styleId; document.head.appendChild(s); }
+          s.textContent = css;
         }
-        
-        var style = document.getElementById(styleId);
-        if (!style) {
-            injectStyle();
-        } else {
-             // S'assurer que le style est réappliqué au cas où Google le retire
-             style.innerHTML = `
-                header, #header, #searchform, .sfbg, #top_nav, .fbar, .gb_1, 
-                div[role="navigation"], nav, footer { display: none !important; }
-                #main, #rcnt, #cnt, body { margin-top: 0 !important; top: 0 !important; }
-             `;
+        ensureStyle();
+
+        /* ===== COUCHE 2 : DÉTECTION INTELLIGENTE PAR STRUCTURE (pas par class) ===== */
+        function kill(el) {
+          if (!el || el.hasAttribute('data-djim-killed')) return;
+          el.setAttribute('data-djim-killed', '1');
+          el.style.cssText = 'display:none!important;height:0!important;max-height:0!important;overflow:hidden!important;visibility:hidden!important;pointer-events:none!important;position:absolute!important;top:-9999px!important;';
         }
 
-        if (!window.djimObserver) {
-          window.djimObserver = new MutationObserver(function(mutations) {
-             var style = document.getElementById(styleId);
-             if (!style) injectStyle();
-          });
-          window.djimObserver.observe(document.head, { childList: true, subtree: true });
+        function isGoogleBar(el) {
+          /* Un header Google AI = div en haut de l'écran, étroit, contient SVG/img + bouton */
+          if (!el || el.tagName !== 'DIV') return false;
+          var rect = el.getBoundingClientRect();
+          /* Doit être en haut (top < 10px) et étroit (hauteur < 90px) et large */
+          if (rect.top > 10 || rect.height < 5 || rect.height > 90) return false;
+          if (rect.width < window.innerWidth * 0.7) return false;
+          /* Doit contenir un SVG ou image (logo Google) */
+          var hasBrand = el.querySelector('svg, img, a[href*="google"]');
+          /* Doit contenir un bouton (fermer) */
+          var hasBtn = el.querySelector('button, [role="button"]');
+          return !!(hasBrand && hasBtn);
         }
+
+        function nukeAll() {
+          ensureStyle();
+
+          /* --- Stratégie A : éléments avec computed position sticky/fixed --- */
+          document.querySelectorAll('div, section, aside').forEach(function(el) {
+            if (el.hasAttribute('data-djim-killed')) return;
+            var cs = window.getComputedStyle(el);
+            if (cs.position === 'sticky' || cs.position === 'fixed') {
+              var rect = el.getBoundingClientRect();
+              /* Seulement les barres en haut, étroites (< 90px de haut) */
+              if (rect.top <= 10 && rect.height < 90 && rect.height > 0) {
+                kill(el);
+              }
+            }
+          });
+
+          /* --- Stratégie B : attributs style inline sticky --- */
+          document.querySelectorAll('[style*="sticky"], [style*="Sticky"]').forEach(function(el) {
+            var rect = el.getBoundingClientRect();
+            if (rect.top <= 10 && rect.height < 90 && rect.height > 0) {
+              kill(el);
+            }
+          });
+
+          /* --- Stratégie C : détection structurelle (SVG/logo + bouton close en haut) --- */
+          document.querySelectorAll('div').forEach(function(el) {
+            if (el.hasAttribute('data-djim-killed')) return;
+            if (isGoogleBar(el)) {
+              kill(el);
+            }
+          });
+
+          /* --- Stratégie D : boutons close → remonter au parent header --- */
+          document.querySelectorAll('button, [role="button"]').forEach(function(btn) {
+            if (btn.closest('[data-djim-killed]')) return;
+            var lbl = (btn.getAttribute('aria-label')||'') + (btn.textContent||'');
+            var isX = /close|fermer|×|✕/i.test(lbl) || (btn.textContent||'').trim().length <= 2 && btn.querySelector('svg');
+            if (!isX) return;
+            var p = btn;
+            for (var i = 0; i < 6; i++) {
+              p = p.parentElement;
+              if (!p || p === document.body) break;
+              var r = p.getBoundingClientRect();
+              if (r.top <= 10 && r.height < 90 && r.height > 0 && r.width > window.innerWidth * 0.6) {
+                kill(p);
+                break;
+              }
+            }
+          });
+
+          /* --- Stratégie E : role="banner" et aria-label Google --- */
+          document.querySelectorAll('[role="banner"], [aria-label*="Google"]').forEach(function(el) {
+            if (!el.hasAttribute('data-djim-killed')) kill(el);
+          });
+        }
+
+        /* ===== COUCHE 3 : BOUCLE requestAnimationFrame (filet de sécurité ultime) ===== */
+        /* Tourne en continu toutes les ~250ms, ultra léger car on skip les éléments déjà tués */
+        if (window._djimRAF) cancelAnimationFrame(window._djimRAF);
+        var lastRun = 0;
+        function rafLoop(ts) {
+          if (ts - lastRun > 250) { lastRun = ts; nukeAll(); }
+          window._djimRAF = requestAnimationFrame(rafLoop);
+        }
+        window._djimRAF = requestAnimationFrame(rafLoop);
+
+        /* ===== COUCHE 4 : MutationObserver (pour les ajouts DOM) ===== */
+        if (window._djimObs) window._djimObs.disconnect();
+        var mt = null;
+        window._djimObs = new MutationObserver(function() {
+          if (mt) return;
+          mt = setTimeout(function() { mt=null; nukeAll(); }, 50);
+        });
+        window._djimObs.observe(document.documentElement, {childList:true, subtree:true, attributes:true, attributeFilter:['style','class']});
+
+        /* ===== COUCHE 5 : Scroll listener (sticky headers apparaissent au scroll) ===== */
+        if (!window._djimScroll) {
+          window._djimScroll = true;
+          var st = null;
+          window.addEventListener('scroll', function() {
+            if (st) return;
+            st = setTimeout(function() { st=null; nukeAll(); }, 100);
+          }, {passive:true, capture:true});
+        }
+
+        /* Exécution immédiate */
+        nukeAll();
       })();
     """;
     controller.runJavaScript(jsCode);
@@ -522,8 +633,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           // Barre de progression/Groupe actif
           bottom: _buildAppBarBottom(colorScheme),
         ),
-        floatingActionButton: (_hasPageError || _loadingProgress > 0)
-          ? FloatingActionButton.extended(
+        floatingActionButton: _hasPageError
+          ? FloatingActionButton.small(
               onPressed: () {
                 setState(() {
                   _hasPageError = false;
@@ -531,19 +642,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 });
                 controller.reload();
               },
-              backgroundColor: _hasPageError ? colorScheme.error : colorScheme.primary,
-              foregroundColor: _hasPageError ? colorScheme.onError : colorScheme.onPrimary,
-              icon: Icon(_hasPageError ? Icons.refresh_rounded : Icons.hourglass_top_rounded),
-              label: Text(_hasPageError ? 'Recharger' : 'Chargement...'),
-              elevation: 4,
+              backgroundColor: colorScheme.error,
+              foregroundColor: colorScheme.onError,
+              elevation: 2,
+              child: const Icon(Icons.refresh_rounded, size: 20),
             )
           : null,
+        floatingActionButtonLocation: FloatingActionButtonLocation.miniEndFloat,
         // Le corps principal est le WebView avec un espace en bas pour éviter que le contenu soit coupé.
         body: Column(
           children: [
             Expanded(child: WebViewWidget(controller: controller)),
             // Espace en bas pour ne pas que le dernier résultat soit coincé
-            SizedBox(height: (_hasPageError || _loadingProgress > 0) ? 72 : 16),
+            SizedBox(height: _hasPageError ? 56 : 16),
           ],
         ),
       );
@@ -685,7 +796,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     if (!hasProgress && !hasActiveGroup) return null;
 
-    final double preferredHeight = (hasProgress ? 2.0 : 0.0) + (hasActiveGroup ? 32.0 : 0.0);
+    final double preferredHeight = (hasProgress ? 2.0 : 0.0) + (hasActiveGroup ? 20.0 : 0.0);
     
     return PreferredSize(
       preferredSize: Size.fromHeight(preferredHeight),
@@ -699,16 +810,27 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               minHeight: 2,
             ),
           if (hasActiveGroup)
-            Container(
-              height: 32,
-              color: colorScheme.primary.withValues(alpha: 0.1),
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Row(children: [
-                Icon(Icons.folder_open_rounded, size: 16, color: colorScheme.primary),
-                const SizedBox(width: 8),
-                Expanded(child: Text("Enregistrement dans : ${_activeGroup!['group_name']}", style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 12), overflow: TextOverflow.ellipsis)),
-                IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: () => _setActiveGroup(null), visualDensity: VisualDensity.compact, tooltip: 'Arrêter l\'enregistrement') // UTILISE LA NOUVELLE MÉTHODE
-              ]),
+            GestureDetector(
+              onTap: () => _setActiveGroup(null),
+              child: Container(
+                height: 20,
+                color: colorScheme.primary.withValues(alpha: 0.06),
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.fiber_manual_record, size: 6, color: colorScheme.primary.withValues(alpha: 0.7)),
+                    const SizedBox(width: 6),
+                    Text(
+                      _activeGroup!['group_name'].toString(),
+                      style: TextStyle(color: colorScheme.primary.withValues(alpha: 0.6), fontSize: 10, fontWeight: FontWeight.w500, letterSpacing: 0.3),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.close, size: 10, color: colorScheme.primary.withValues(alpha: 0.4)),
+                  ],
+                ),
+              ),
             ),
         ],
       ),
@@ -880,80 +1002,112 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          'Récemment cherchés',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w500,
-            letterSpacing: 0.3,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.schedule_rounded, size: 14, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
+            const SizedBox(width: 6),
+            Text(
+              'Recherches récentes',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: Spacing.lg),
-        Wrap(
-          spacing: Spacing.md,
-          runSpacing: Spacing.md,
-          alignment: WrapAlignment.center,
-          children: recentItems.map((item) {
-            final query = item['history_query'] as String;
-            final id = item['history_id'] as int;
-            return _buildHistoryChip(query, id, colorScheme, theme);
-          }).toList(),
+        // Grille 2 colonnes pour un affichage propre et contraint
+        LayoutBuilder(
+          builder: (context, constraints) {
+            // Chaque chip prend la moitié de la largeur - l'espacement
+            final chipWidth = (constraints.maxWidth - Spacing.md) / 2;
+            return Wrap(
+              spacing: Spacing.md,
+              runSpacing: Spacing.md,
+              alignment: WrapAlignment.center,
+              children: recentItems.map((item) {
+                final query = item['history_query'] as String;
+                final id = item['history_id'] as int;
+                return SizedBox(
+                  width: chipWidth,
+                  child: _buildHistoryChip(query, id, colorScheme, theme),
+                );
+              }).toList(),
+            );
+          },
         ),
       ],
     );
   }
 
-  /// Construit une puce d'historique élégante
+  /// Tronque intelligemment le texte pour l'affichage dans le chip
+  String _truncateQuery(String text, {int maxLength = 20}) {
+    final trimmed = text.trim();
+    if (trimmed.length <= maxLength) return trimmed;
+    return '${trimmed.substring(0, maxLength)}…';
+  }
+
+  /// Construit une puce d'historique élégante avec texte contraint
   Widget _buildHistoryChip(String label, int id, ColorScheme colorScheme, ThemeData theme) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          _searchController.text = label;
-          _performSearch(label);
-        },
-        borderRadius: BorderRadius.circular(Spacing.radiusMedium),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: Spacing.lg,
-            vertical: Spacing.md,
-          ),
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-            border: Border.all(
-              color: colorScheme.outline.withValues(alpha: 0.2),
-              width: 1,
+    return Tooltip(
+      message: label,
+      preferBelow: true,
+      waitDuration: const Duration(milliseconds: 400),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            _searchController.text = label;
+            _performSearch(label);
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              border: Border.all(
+                color: colorScheme.outline.withValues(alpha: 0.12),
+                width: 1,
+              ),
+              borderRadius: BorderRadius.circular(12),
             ),
-            borderRadius: BorderRadius.circular(Spacing.radiusMedium),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.history,
-                size: 16,
-                color: colorScheme.primary,
-              ),
-              const SizedBox(width: Spacing.sm),
-              Text(
-                label,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.w500,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.history_rounded,
+                  size: 15,
+                  color: colorScheme.primary.withValues(alpha: 0.7),
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(width: Spacing.sm),
-              GestureDetector(
-                onTap: () => _deleteHistoryItem(id),
-                child: Icon(
-                  Icons.close,
-                  size: 14,
-                  color: colorScheme.onSurfaceVariant,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _truncateQuery(label),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 12.5,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 4),
+                GestureDetector(
+                  onTap: () => _deleteHistoryItem(id),
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 13,
+                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

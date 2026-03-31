@@ -363,8 +363,8 @@ class _TabGroupsScreenState extends State<TabGroupsScreen> {
       // Le FAB est maintenant toujours visible pour créer un nouveau groupe
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showNewGroupDialog,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Nouveau groupe'),
+        icon: const Icon(Icons.add_rounded, color: Colors.white),
+        label: const Text('Nouveau groupe', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white)),
         backgroundColor: colorScheme.primaryContainer,
         foregroundColor: colorScheme.onPrimaryContainer,
       ),
