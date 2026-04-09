@@ -612,7 +612,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
 
     // ═══════════════════════════════════════════════
-    // MODE BAS (style Comet) — Barre de recherche en bas
+    // MODE BAS  — Barre de recherche en bas
     // ═══════════════════════════════════════════════
     if (_isSearchBarBottom) {
       return _buildBottomModeLayout(
@@ -1040,7 +1040,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYOUT MODE BAS (style Comet) — Barre de recherche en bas
+  // LAYOUT MODE BAS  — Barre de recherche en bas
   // ═══════════════════════════════════════════════════════════════
 
   Widget _buildBottomModeLayout({
@@ -1132,7 +1132,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  /// Barre du bas style Comet : navigation + recherche + menu
+  /// Barre du bas : navigation + recherche + menu
   Widget _buildBottomBar(ColorScheme colorScheme, Widget navButtons) {
     return Container(
       decoration: BoxDecoration(
