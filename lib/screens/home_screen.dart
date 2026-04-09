@@ -53,8 +53,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // Utilisateur connecté
   Map<String, dynamic>? _currentUser;
 
-  // Historique des dernières recherches
-  List<Map<String, dynamic>> _recentHistory = [];
+  // Position de la barre de recherche (haut/bas style Comet)
+  bool _isSearchBarBottom = false;
+  static const String _searchBarPositionKey = 'search_bar_position';
 
   // --- MODIFICATIONS POUR LE GROUPE ACTIF ---
   Map<String, dynamic>? _activeGroup;
@@ -79,7 +80,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _initController();
     _initSpeech();
     _loadSession();
-    _loadHistory();
+    _loadSearchBarPosition();
     _loadActiveGroup();
 
     _animController = AnimationController(
@@ -150,13 +151,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
-  Future<void> _loadHistory() async {
-    final history = await _dbService.getRecentHistoryForHome();
+  Future<void> _loadSearchBarPosition() async {
+    final position = await _dbService.getSetting(_searchBarPositionKey, 'top');
     if (mounted) {
       setState(() {
-        _recentHistory = history;
+        _isSearchBarBottom = position == 'bottom';
       });
     }
+  }
+
+  Future<void> _setSearchBarPosition(bool isBottom) async {
+    setState(() {
+      _isSearchBarBottom = isBottom;
+    });
+    await _dbService.updateSetting(_searchBarPositionKey, isBottom ? 'bottom' : 'top');
   }
 
   void _initSpeech() async {
@@ -511,7 +519,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     // Ajout conditionnel à l'historique
     if (_activeGroup == null) {
       _dbService.addHistory(trimmed);
-      _loadHistory();
     }
 
     setState(() {
@@ -527,10 +534,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _appBarFocusNode.unfocus();
   }
 
-  Future<void> _deleteHistoryItem(int id) async {
-    await _dbService.deleteHistoryItem(id);
-    _loadHistory();
-  }
 
   PopupMenuItem<String> _buildPopupItem(String text, IconData icon, String value, {bool isDestructive = false}) {
     final theme = Theme.of(context);
@@ -608,7 +611,24 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       return [Padding(padding: const EdgeInsets.only(top: 15.0, right: 5), child: _buildMainMenu())];
     }
 
+    // ═══════════════════════════════════════════════
+    // MODE BAS (style Comet) — Barre de recherche en bas
+    // ═══════════════════════════════════════════════
+    if (_isSearchBarBottom) {
+      return _buildBottomModeLayout(
+        colorScheme: colorScheme,
+        backButtonEnabled: backButtonEnabled,
+        backButtonColor: backButtonColor,
+        forwardButtonColor: forwardButtonColor,
+        canGoBackInWeb: canGoBackInWeb,
+        canGoForwardInWeb: canGoForwardInWeb,
+        canPop: canPop,
+      );
+    }
 
+    // ═══════════════════════════════════════════════
+    // MODE HAUT (classique) — Barre de recherche en haut
+    // ═══════════════════════════════════════════════
     if (_showWebView) {
       // Structure pour la vue web avec AppBar déroulante (NestedScrollView/SliverAppBar)
       // MODIFIÉ: Remplacement de NestedScrollView par Scaffold + AppBar standard pour garantir le défilement du WebView.
@@ -747,7 +767,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           case 'downloads': 
             Navigator.push(context, _slideTransition(const DownloadsScreen()));
             break;
-          case 'settings': Navigator.push(context, _slideTransition(const SettingsScreen())); break;
+          case 'settings':
+            await Navigator.push(context, _slideTransition(const SettingsScreen()));
+            if (!mounted) return;
+            _loadSearchBarPosition(); // Recharger la position au retour des paramètres
+            break;
           case 'help': _showHelpOptions(); break;
           case 'about': Navigator.push(context, _slideTransition(const AboutScreen())); break;
           case 'sync':
@@ -766,6 +790,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vous avez été déconnecté.')));
               }
               break;
+          case 'toggle_position':
+            _setSearchBarPosition(!_isSearchBarBottom);
+            break;
           case 'exit': SystemNavigator.pop(); break;
         }
       },
@@ -782,6 +809,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _buildPopupItem('Paramètres', Icons.settings_outlined, 'settings'),
         _buildPopupItem('Aide', Icons.help_outline, 'help'), // L'ACTION EST DANS _showHelpOptions
         _buildPopupItem('À propos', Icons.info_outline, 'about'),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: 'toggle_position',
+          child: Row(children: [
+            Icon(
+              _isSearchBarBottom ? Icons.vertical_align_top_rounded : Icons.vertical_align_bottom_rounded,
+              color: Theme.of(context).colorScheme.onSurface, size: 22,
+            ),
+            const SizedBox(width: 15),
+            Text(
+              _isSearchBarBottom ? 'Barre de recherche en haut' : 'Barre de recherche en bas',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+            ),
+          ]),
+        ),
         _buildPopupItem(_currentUser == null ? 'Connexion / Sync' : 'Se déconnecter', _currentUser == null ? Icons.sync_rounded : Icons.logout_rounded, 'sync', isDestructive: _currentUser != null),
         const PopupMenuDivider(),
         _buildPopupItem('Quitter', Icons.power_settings_new_rounded, 'exit', isDestructive: true),
@@ -854,7 +896,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget _buildHomeBody() {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    bool hideButtons = _suggestions.isNotEmpty && _isFocused;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Spacing.xl),
@@ -966,20 +1007,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ),
             ),
 
-          const SizedBox(height: Spacing.xxxl),
-
-          // Historique récent avec animations
-          FadeTransition(
-            opacity: _actionsFade,
-            child: IgnorePointer(
-              ignoring: hideButtons,
-              child: AnimatedOpacity(
-                duration: AnimationDurations.normal,
-                opacity: hideButtons ? 0.0 : 1.0,
-                child: _buildHistorySection(colorScheme, theme),
-              ),
-            ),
-          ),
 
           const SizedBox(height: Spacing.xxxl),
           const SizedBox(height: Spacing.lg),
@@ -988,134 +1015,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  /// Construit la section historique récent avec meilleur design
-  Widget _buildHistorySection(ColorScheme colorScheme, ThemeData theme) {
-    final recentItems = _recentHistory
-        .where((item) => item['history_query'] is String && (item['history_query'] as String).isNotEmpty)
-        .take(4)
-        .toList();
-
-    if (recentItems.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.schedule_rounded, size: 14, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
-            const SizedBox(width: 6),
-            Text(
-              'Recherches récentes',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.8,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: Spacing.lg),
-        // Grille 2 colonnes pour un affichage propre et contraint
-        LayoutBuilder(
-          builder: (context, constraints) {
-            // Chaque chip prend la moitié de la largeur - l'espacement
-            final chipWidth = (constraints.maxWidth - Spacing.md) / 2;
-            return Wrap(
-              spacing: Spacing.md,
-              runSpacing: Spacing.md,
-              alignment: WrapAlignment.center,
-              children: recentItems.map((item) {
-                final query = item['history_query'] as String;
-                final id = item['history_id'] as int;
-                return SizedBox(
-                  width: chipWidth,
-                  child: _buildHistoryChip(query, id, colorScheme, theme),
-                );
-              }).toList(),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  /// Tronque intelligemment le texte pour l'affichage dans le chip
-  String _truncateQuery(String text, {int maxLength = 20}) {
-    final trimmed = text.trim();
-    if (trimmed.length <= maxLength) return trimmed;
-    return '${trimmed.substring(0, maxLength)}…';
-  }
-
-  /// Construit une puce d'historique élégante avec texte contraint
-  Widget _buildHistoryChip(String label, int id, ColorScheme colorScheme, ThemeData theme) {
-    return Tooltip(
-      message: label,
-      preferBelow: true,
-      waitDuration: const Duration(milliseconds: 400),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            _searchController.text = label;
-            _performSearch(label);
-          },
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-              border: Border.all(
-                color: colorScheme.outline.withValues(alpha: 0.12),
-                width: 1,
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.history_rounded,
-                  size: 15,
-                  color: colorScheme.primary.withValues(alpha: 0.7),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _truncateQuery(label),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 12.5,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                GestureDetector(
-                  onTap: () => _deleteHistoryItem(id),
-                  behavior: HitTestBehavior.opaque,
-                  child: Padding(
-                    padding: const EdgeInsets.all(2),
-                    child: Icon(
-                      Icons.close_rounded,
-                      size: 13,
-                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _buildSearchBar({required bool isSmall}) {
-    FocusNode currentFocusNode = isSmall && !_showWebView ? _appBarFocusNode : _focusNode;
+    // En mode bottom, toujours utiliser _focusNode pour la cohérence
+    FocusNode currentFocusNode = isSmall && !_showWebView && !_isSearchBarBottom ? _appBarFocusNode : _focusNode;
 
     final searchBar = SearchBarWidget(
       controller: _searchController,
@@ -1135,6 +1038,229 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return searchBar;
   }
 
+
+  // ═══════════════════════════════════════════════════════════════
+  // LAYOUT MODE BAS (style Comet) — Barre de recherche en bas
+  // ═══════════════════════════════════════════════════════════════
+
+  Widget _buildBottomModeLayout({
+    required ColorScheme colorScheme,
+    required bool backButtonEnabled,
+    required Color backButtonColor,
+    required Color forwardButtonColor,
+    required bool canGoBackInWeb,
+    required bool canGoForwardInWeb,
+    required bool canPop,
+  }) {
+    final theme = Theme.of(context);
+
+    // Boutons de navigation pour la barre du bas
+    Widget navButtons = Row(mainAxisSize: MainAxisSize.min, children: [
+      _buildNavButton(Icons.arrow_back_rounded, backButtonColor, backButtonEnabled ? () {
+        if (canGoBackInWeb) {
+          controller.goBack();
+        } else {
+          Navigator.pop(context);
+        }
+      } : null, 'Retour'),
+      const SizedBox(width: 4),
+      _buildNavButton(Icons.arrow_forward_rounded, forwardButtonColor, canGoForwardInWeb ? () => controller.goForward() : null, 'Suivant'),
+    ]);
+
+    return Scaffold(
+      backgroundColor: colorScheme.surface,
+      resizeToAvoidBottomInset: true,
+      floatingActionButton: _showWebView && _hasPageError
+        ? FloatingActionButton.small(
+            onPressed: () {
+              setState(() { _hasPageError = false; _loadingProgress = 0; });
+              controller.reload();
+            },
+            backgroundColor: colorScheme.error,
+            foregroundColor: colorScheme.onError,
+            elevation: 2,
+            child: const Icon(Icons.refresh_rounded, size: 20),
+          )
+        : null,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // Barre de progression en haut
+            if (_showWebView && _loadingProgress > 0 && _loadingProgress < 1)
+              LinearProgressIndicator(
+                value: _loadingProgress,
+                backgroundColor: Colors.transparent,
+                valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                minHeight: 2,
+              ),
+            // Indicateur de groupe actif en haut (mode WebView)
+            if (_showWebView && _activeGroup != null)
+              GestureDetector(
+                onTap: () => _setActiveGroup(null),
+                child: Container(
+                  height: 24,
+                  color: colorScheme.primary.withValues(alpha: 0.06),
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.fiber_manual_record, size: 6, color: colorScheme.primary.withValues(alpha: 0.7)),
+                      const SizedBox(width: 6),
+                      Text(
+                        _activeGroup!['group_name'].toString(),
+                        style: TextStyle(color: colorScheme.primary.withValues(alpha: 0.6), fontSize: 10, fontWeight: FontWeight.w500, letterSpacing: 0.3),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.close, size: 10, color: colorScheme.primary.withValues(alpha: 0.4)),
+                    ],
+                  ),
+                ),
+              ),
+            // Contenu principal
+            Expanded(
+              child: _showWebView
+                ? WebViewWidget(controller: controller)
+                : _buildBottomHomeBody(theme, colorScheme),
+            ),
+            // Barre du bas (dans le body pour que le clavier la pousse vers le haut)
+            _buildBottomBar(colorScheme, navButtons),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Barre du bas style Comet : navigation + recherche + menu
+  Widget _buildBottomBar(ColorScheme colorScheme, Widget navButtons) {
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, -3),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Suggestions au-dessus de la barre de recherche (mode bottom)
+            if (_suggestions.isNotEmpty && _isFocused)
+              Container(
+                constraints: const BoxConstraints(maxHeight: 280),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  border: Border(
+                    top: BorderSide(color: colorScheme.outline.withValues(alpha: 0.15)),
+                  ),
+                ),
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
+                  shrinkWrap: true,
+                  itemCount: _suggestions.length,
+                  itemBuilder: (context, index) => _buildSuggestionTile(
+                    _suggestions[index],
+                    colorScheme,
+                    index == _suggestions.length - 1,
+                  ),
+                ),
+              ),
+            // Séparateur subtil
+            Divider(height: 1, thickness: 0.5, color: colorScheme.outline.withValues(alpha: 0.1)),
+            // Barre principale
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Row(
+                children: [
+                  navButtons,
+                  const SizedBox(width: 8),
+                  Expanded(child: _buildSearchBar(isSmall: true)),
+                  _buildMainMenu(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Corps de l'écran d'accueil en mode bottom (sans logo, épuré)
+  Widget _buildBottomHomeBody(ThemeData theme, ColorScheme colorScheme) {
+    return Center(
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.xl),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(height: Spacing.xxxl),
+
+              // Groupe actif (badge)
+              if (_activeGroup != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: Spacing.xxxl),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: Spacing.lg, vertical: Spacing.md),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.08),
+                      border: Border.all(color: colorScheme.primary.withValues(alpha: 0.3), width: 1.5),
+                      borderRadius: BorderRadius.circular(Spacing.radiusRound),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.folder_open_rounded, size: 18, color: colorScheme.primary),
+                        const SizedBox(width: Spacing.md),
+                        Text(
+                          'Groupe actif: ${_activeGroup!['group_name']}',
+                          style: theme.textTheme.labelLarge?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(width: Spacing.md),
+                        InkWell(
+                          onTap: () => _setActiveGroup(null),
+                          child: Icon(Icons.close, size: 18, color: colorScheme.primary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // Icône et indication subtile
+              Icon(
+                Icons.search_rounded,
+                size: 72,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.12),
+              ),
+              const SizedBox(height: Spacing.lg),
+              Text(
+                'Recherchez depuis la barre ci-dessous',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.45),
+                  fontWeight: FontWeight.w400,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: Spacing.xxl),
+
+
+              const SizedBox(height: Spacing.xxxl),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // WIDGETS PARTAGÉS
+  // ═══════════════════════════════════════════════════════════════
 
   Widget _buildSuggestionsList(ColorScheme colorScheme) {
     return Padding(

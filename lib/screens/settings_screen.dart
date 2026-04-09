@@ -24,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   Map<String, dynamic>? _currentUser;
   String _searchEngine = 'Google';
   String _themeMode = 'Clair';
+  String _searchBarPosition = 'Haut';
 
   @override
   void initState() {
@@ -56,12 +57,14 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     final user = await _dbService.getSessionUser();
     final engine = await _dbService.getSetting('search_engine', 'Google');
     final theme = await _dbService.getSetting('theme', 'Clair');
-    
+    final position = await _dbService.getSetting('search_bar_position', 'top');
+
     if (mounted) {
       setState(() {
         _currentUser = user;
         _searchEngine = engine;
         _themeMode = theme;
+        _searchBarPosition = position == 'bottom' ? 'Bas' : 'Haut';
       });
       _controller.forward();
     }
@@ -177,6 +180,13 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                       _showSelectionDialog('Moteur de recherche', ['Google', 'Bing', 'DuckDuckGo', 'Yahoo'], _searchEngine, (val) {
                         _dbService.updateSetting('search_engine', val);
                         setState(() => _searchEngine = val);
+                      });
+                    }),
+                    _buildSettingsItem(Icons.swap_vert_rounded, 'Position barre de recherche', _searchBarPosition, onTap: () {
+                      _showSelectionDialog('Position de la barre de recherche', ['Haut', 'Bas'], _searchBarPosition, (val) {
+                        final dbValue = val == 'Bas' ? 'bottom' : 'top';
+                        _dbService.updateSetting('search_bar_position', dbValue);
+                        setState(() => _searchBarPosition = val);
                       });
                     }),
                     _buildSettingsItem(Icons.vpn_key_outlined, 'Mots de passe', 'Gérer vos accès'),
